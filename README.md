@@ -43,6 +43,22 @@ pgn creates its own scratch database on that server, applies your migrations,
 prepares each query to infer its types, generates, then drops the scratch
 database.
 
+### Pointing `gen:` at this generator
+
+`gen:` accepts a few forms; only two of them are actually useful:
+
+| form            | example                                | works?                                    |
+| --------------- | --------------------------------------- | ------------------------------------------ |
+| plain http(s)   | `https://.../python.gen/gen/Gen.dhall`  | yes; pgn fetches it and every relative import over HTTP |
+| relative path    | `../path/to/python.gen/gen/Gen.dhall`   | yes, if you keep a local checkout next to your project |
+| absolute path    | `/abs/path/to/python.gen/gen/Gen.dhall` | yes, but the resulting freeze key is machine-specific |
+| `file://` URL    | `file:///abs/.../Gen.dhall`             | rejected; pgn's project schema does not accept `file://` |
+
+Whichever form you use, the freeze file that caches the resolved generator
+(section "Freeze lifecycle" below) keys on the literal `gen:` value and
+stores a hash of the resolved Dhall, so the hash is identical across forms
+as long as they resolve to the same source.
+
 ## Config reference
 
 | key             | type               | default                        |
@@ -177,6 +193,17 @@ runs skip re-resolving it. That cache does not know when the generator's own
 source changed underneath a stable path or URL; if you edit this generator
 in place and regenerate against a local checkout, delete the freeze file
 first, or pgn will silently reuse the old, cached generator.
+
+**Query comments and `$params`.** The generator renders each SQL fragment
+verbatim, comments included, and turns each bound placeholder into a
+`%(name)s` entry keyed by its param name. A `$word` written inside a query
+comment is a latent hazard: if pgn's own tokenizer picks it up as a
+placeholder, it now needs a matching bound param somewhere in the query, and
+if it doesn't, the comment text still ships into the emitted SQL string
+unchanged either way. The generator's renderer is deliberately not the place
+to fix this (rewriting comment text would make the emitted SQL diverge from
+the source `.sql` file); keep it as an authoring rule instead: don't name a
+`$param` inside a query comment that the query doesn't also bind.
 
 ## Using the generated code
 

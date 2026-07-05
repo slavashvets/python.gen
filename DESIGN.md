@@ -378,6 +378,22 @@ overwritten on every run. Do not hand-edit it.
 
 ## 10. Generator decomposition
 
+`gen/Gen.dhall` is the entry point handed to gen-sdk:
+
+```dhall
+let Sdk = ./Deps/Sdk.dhall
+
+in  Sdk ./Config.dhall ./compile.dhall
+```
+
+The Sdk `module` function has signature `\(Config : Type) -> \(compile) ->
+{ contractVersion, Config, compile, compileToFileMap }`, and
+`compile : Optional Config -> Project -> Lude.Compiled.Type Lude.Files.Type`,
+where `Files.Type = List { path : Text, content : Text }`. `compile.dhall`
+folds the optional user config into the internal interpreter config and
+calls `Interpreters/Project.dhall`, which traverses queries and custom types
+and assembles the file list.
+
 `gen/` mirrors a typical pgn gen-sdk generator, Python-flavored. The
 algebra/interpreter/template split keeps assembly separate from rendering.
 
