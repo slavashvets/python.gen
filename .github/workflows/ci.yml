@@ -68,18 +68,41 @@ jobs:
       - name: Sync the harness venv
         run: mise x -- uv sync
 
+      # Hosted runners cannot fit a full 7-artifact pgn generate (~31 GB peak
+      # RSS measured locally); keep only the "python" artifact for this CI
+      # checkout. The config-variant tests that need the other artifacts skip
+      # under HARNESS_CI_REDUCED=1 and stay covered by local runs.
+      - name: Reduce the fixture project to the python artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          python3 - <<'EOF'
+          from pathlib import Path
+
+          p = Path("tests/fixture-project/project1.pgn.yaml")
+          head, sep, _ = p.read_text().partition("  # The variants below")
+          assert sep, "variants marker not found in project1.pgn.yaml"
+          _ = p.write_text(head.rstrip() + "\n")
+          EOF
+          cat tests/fixture-project/project1.pgn.yaml
+
       - name: Canary timing for pgn generate
         shell: bash
         run: |
           set -uo pipefail
 
+          nproc
+          free -h
           cd tests/fixture-project
           rm -f freeze1.pgn.yaml
           /usr/bin/time -v mise x -- pgn --database-url "$PGN_TEST_DATABASE_URL" generate 2>&1 | tail -30
+          rm -rf artifacts freeze1.pgn.yaml
 
       - name: Run the generator harness tests
         env:
           PYTHONUNBUFFERED: "1"
+          HARNESS_CI_REDUCED: "1"
         run: mise x -- uv run pytest tests -v --durations=10
 
   contract:

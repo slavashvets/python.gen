@@ -9,7 +9,19 @@ name and sync-surface presence they produce, not a full golden tree.
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
+
+import pytest
+
+pytestmark = pytest.mark.skipif(
+    os.environ.get("HARNESS_CI_REDUCED") == "1",
+    reason=(
+        "variant decode semantics are pinned locally; CI runs the reduced "
+        "single-artifact project because pgn generate of all 7 artifacts "
+        "exhausts GitHub-hosted runner memory"
+    ),
+)
 
 
 def _artifact_src(generated_tree: Path, artifact_key: str) -> Path:
