@@ -6,17 +6,23 @@ let Prelude = Deps.Prelude
 
 let Config = ./Config.dhall
 
+let OnUnsupported = ./Structures/OnUnsupported.dhall
+
 let ProjectInterpreter = ./Interpreters/Project.dhall
 
 -- Entry point handed to gen-sdk's module. `config` and each of its fields are
 -- Optional, so a project may omit the whole config block or any subset of its
 -- keys; `defaults` collects every fallback in one place (packageName from the
--- project name in kebab case, emitSync off), so a future knob's default is added
--- here alongside the others. The async surface is always emitted; emitSync adds
--- the sync mirror.
+-- project name in kebab case, emitSync off, onUnsupported Fail), so a future
+-- knob's default is added here alongside the others. The async surface is
+-- always emitted; emitSync adds the sync mirror.
 in  \(config : Optional Config) ->
     \(project : Model.Project) ->
-      let defaults = { packageName = project.name.inKebabCase, emitSync = False }
+      let defaults =
+            { packageName = project.name.inKebabCase
+            , emitSync = False
+            , onUnsupported = OnUnsupported.Mode.Fail
+            }
 
       let packageName =
             Prelude.Optional.fold
@@ -38,9 +44,24 @@ in  \(config : Optional Config) ->
               )
               defaults.emitSync
 
+      let onUnsupported =
+            Prelude.Optional.fold
+              Config
+              config
+              OnUnsupported.Mode
+              ( \(c : Config) ->
+                  Prelude.Optional.fold
+                    OnUnsupported.Mode
+                    c.onUnsupported
+                    OnUnsupported.Mode
+                    (\(m : OnUnsupported.Mode) -> m)
+                    defaults.onUnsupported
+              )
+              defaults.onUnsupported
+
       let importName = Prelude.Text.replace "-" "_" packageName
 
       let interpreterConfig =
-            { packageName, importName, emitSync }
+            { packageName, importName, emitSync, onUnsupported }
 
       in  ProjectInterpreter.run interpreterConfig project

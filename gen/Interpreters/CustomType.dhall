@@ -22,10 +22,18 @@ let Input = Model.CustomType
 
 let TypeKind = < Enum | Composite >
 
+-- moduleName/pgSchema/pgName mirror the input Name/CustomType so Project.dhall's
+-- combineOutputs can derive the facade export, types/__init__ export, and the
+-- composite/enum registration name from this Output alone (the surviving list
+-- after Skip filtering), without a second, separately-threaded List
+-- Model.CustomType parameter.
 let Output =
       { modulePath : Text
       , moduleContent : Text
       , typeName : Text
+      , moduleName : Text
+      , pgSchema : Text
+      , pgName : Text
       , kind : TypeKind
       }
 
@@ -71,7 +79,9 @@ let run =
       \(input : Input) ->
         let typeName = input.name.inPascalCase
 
-        let modulePath = "types/${input.name.inSnakeCase}.py"
+        let moduleName = input.name.inSnakeCase
+
+        let modulePath = "types/${moduleName}.py"
 
         in  merge
               { Enum =
@@ -94,6 +104,9 @@ let run =
                               EnumModule.run
                                 { typeName, variants = templateVariants }
                           , typeName
+                          , moduleName
+                          , pgSchema = input.pgSchema
+                          , pgName = input.pgName
                           , kind = TypeKind.Enum
                           }
               , Composite =
@@ -141,6 +154,9 @@ let run =
                                       , fields
                                       }
                                 , typeName
+                                , moduleName
+                                , pgSchema = input.pgSchema
+                                , pgName = input.pgName
                                 , kind = TypeKind.Composite
                                 }
 

@@ -34,6 +34,10 @@ let ImportSet = ../Structures/ImportSet.dhall
 
 let Surface = ../Structures/Surface.dhall
 
+let OnUnsupported = ../Structures/OnUnsupported.dhall
+
+let Report = { path : List Text, message : Text }
+
 let Input = Model.Project
 
 let Output = Lude.Files.Type
@@ -51,7 +55,11 @@ let withHeader =
 -- Value.run's signature; rendering a composite field's pyType does not read it.
 let lookupConfig
     : Algebra.Config
-    = { packageName = "", importName = "", emitSync = False }
+    = { packageName = ""
+      , importName = ""
+      , emitSync = False
+      , onUnsupported = OnUnsupported.Mode.Fail
+      }
 
 -- Render a composite member's Python type purely. The Err branch is unreachable
 -- for a valid composite (CustomType.run fails the whole generation first on any
@@ -79,41 +87,34 @@ let compositeFields =
           )
           members
 
-let isComposite =
-      \(ct : Model.CustomType) ->
-        merge
-          { Composite = \(_ : List Model.Member) -> True
-          , Enum = \(_ : List Model.EnumVariant) -> False
-          , Domain = \(_ : Model.Value) -> False
-          }
-          ct.definition
-
-let isEnum =
-      \(ct : Model.CustomType) ->
-        merge
-          { Composite = \(_ : List Model.Member) -> False
-          , Enum = \(_ : List Model.EnumVariant) -> True
-          , Domain = \(_ : Model.Value) -> False
-          }
-          ct.definition
-
--- Schema-qualified type names for psycopg CompositeInfo.fetch (search-path safe).
+-- Schema-qualified type names for psycopg CompositeInfo.fetch (search-path
+-- safe). Reads CustomTypeGen.Output (already a combineOutputs parameter, and
+-- already the post-Skip-filter surviving set), not Model.CustomType, so
+-- there is no second List Model.CustomType parameter to thread through.
 let compositePgNames =
-      \(customTypes : List Model.CustomType) ->
+      \(customTypes : List CustomTypeGen.Output) ->
         Prelude.List.map
-          Model.CustomType
+          CustomTypeGen.Output
           Text
-          (\(ct : Model.CustomType) -> "${ct.pgSchema}.${ct.pgName}")
-          (Prelude.List.filter Model.CustomType isComposite customTypes)
+          (\(ct : CustomTypeGen.Output) -> "${ct.pgSchema}.${ct.pgName}")
+          ( Prelude.List.filter
+              CustomTypeGen.Output
+              (\(ct : CustomTypeGen.Output) -> merge { Composite = True, Enum = False } ct.kind)
+              customTypes
+          )
 
 -- Enum TypeInfos are registered too so enum arrays parse (see RegisterModule).
 let enumPgNames =
-      \(customTypes : List Model.CustomType) ->
+      \(customTypes : List CustomTypeGen.Output) ->
         Prelude.List.map
-          Model.CustomType
+          CustomTypeGen.Output
           Text
-          (\(ct : Model.CustomType) -> "${ct.pgSchema}.${ct.pgName}")
-          (Prelude.List.filter Model.CustomType isEnum customTypes)
+          (\(ct : CustomTypeGen.Output) -> "${ct.pgSchema}.${ct.pgName}")
+          ( Prelude.List.filter
+              CustomTypeGen.Output
+              (\(ct : CustomTypeGen.Output) -> merge { Composite = False, Enum = True } ct.kind)
+              customTypes
+          )
 
 -- A custom type referenced by a Scalar.Custom name resolves by matching its
 -- snake-case key. The query/column carries a distinct Name occurrence, so the
@@ -162,6 +163,11 @@ let combineOutputs =
       \(config : Algebra.Config) ->
       \(input : Input) ->
       \(queries : List QueryGen.Output) ->
+      -- Already the post-Skip-filter surviving set (see `run`); equal to
+      -- input.customTypes' compiled outputs verbatim when nothing was skipped
+      -- (including every Fail-mode run, since Fail never drops anything).
+      -- Facade/typesInit/register entries are built from this, not
+      -- input.customTypes, so a skipped type leaves no dangling export.
       \(customTypes : List CustomTypeGen.Output) ->
         -- The generator emits the _generated subtree plus the package-root
         -- __init__.py facade. The rest of the shell (pyproject.toml, py.typed) is
@@ -192,14 +198,12 @@ let combineOutputs =
 
         let facadeTypes =
               Prelude.List.map
-                Model.CustomType
+                CustomTypeGen.Output
                 FacadeModule.TypeExport
-                ( \(ct : Model.CustomType) ->
-                    { moduleName = ct.name.inSnakeCase
-                    , className = ct.name.inPascalCase
-                    }
+                ( \(ct : CustomTypeGen.Output) ->
+                    { moduleName = ct.moduleName, className = ct.typeName }
                 )
-                input.customTypes
+                customTypes
 
         let asyncFacade =
               { path = packagePrefix ++ "__init__.py"
@@ -275,26 +279,22 @@ let combineOutputs =
 
         let typesInitExports =
               Prelude.List.map
-                Model.CustomType
+                CustomTypeGen.Output
                 TypesInit.Export
-                ( \(ct : Model.CustomType) ->
-                    { moduleName = ct.name.inSnakeCase
-                    , typeName = ct.name.inPascalCase
-                    }
-                )
-                input.customTypes
+                (\(ct : CustomTypeGen.Output) -> { moduleName = ct.moduleName, typeName = ct.typeName })
+                customTypes
 
         let typesInitFiles =
-              if    Prelude.List.null Model.CustomType input.customTypes
+              if    Prelude.List.null CustomTypeGen.Output customTypes
               then  [] : List Lude.File.Type
               else  [ { path = srcPrefix ++ "types/__init__.py"
                       , content = TypesInit.run { exports = typesInitExports }
                       }
                     ]
 
-        let compositeNames = compositePgNames input.customTypes
+        let compositeNames = compositePgNames customTypes
 
-        let enumNames = enumPgNames input.customTypes
+        let enumNames = enumPgNames customTypes
 
         let hasCustomRegistration =
               Prelude.Bool.not
@@ -393,33 +393,125 @@ let combineOutputs =
         in  Prelude.List.map Lude.File.Type Lude.File.Type withHeader allFiles
           : Output
 
+-- Per-element keep/drop decision plus its warning, computed once from a
+-- single QueryGen.run call and reused for both the Skip filter and the
+-- warning list. Custom types use a pair of plain functions instead of an
+-- equivalent record (see `typeSucceeds`/`typeWarning` below) purely because
+-- that was the faster shape empirically for the type side, and the query
+-- side re-uses `queryChecks` because `lookup` (built from the surviving
+-- custom types) threads into every query's Member/ParamsMember resolution:
+-- calling QueryGen.run config lookup query from more than one place in this
+-- function (once to decide keep/drop, again to render, again for a
+-- warning -- each a fresh, separate call site in the source) measurably
+-- multiplies Dhall's normalization cost per extra call site, confirmed by
+-- bisection against `pgn generate` wall time (a few seconds regressed to
+-- minutes with three call sites; this file keeps it to two: one to build
+-- `queryChecks`, one for the final render).
+let QueryCheck = { query : Model.Query, keep : Bool, warning : Optional Report }
+
 let run =
       \(config : Algebra.Config) ->
       \(input : Input) ->
-        let lookup = buildLookup input.customTypes
+        let skip = merge { Fail = False, Skip = True } config.onUnsupported
 
-        let compiledQueries
-            : Lude.Compiled.Type (List QueryGen.Output)
-            = Lude.Compiled.traverseList
-                Model.Query
-                QueryGen.Output
-                (\(query : Model.Query) -> QueryGen.run config lookup query)
-                input.queries
+        let typeSucceeds
+            : Model.CustomType -> Bool
+            = \(ct : Model.CustomType) ->
+                merge
+                  { Ok = \(_ : CustomTypeGen.Output) -> True, Err = \(_ : Report) -> False }
+                  (CustomTypeGen.run config ct).result
 
-        let compiledTypes
+        -- Nested under the type's own name so the warning names the type
+        -- that failed, not just the inner member/column that triggered it
+        -- (CustomType.run itself does not).
+        let typeWarning
+            : Model.CustomType -> Optional Report
+            = \(ct : Model.CustomType) ->
+                merge
+                  { Ok = \(_ : CustomTypeGen.Output) -> None Report
+                  , Err =
+                      \(err : Report) -> Some { path = [ ct.name.inSnakeCase ] # err.path, message = err.message }
+                  }
+                  (CustomTypeGen.run config ct).result
+
+        -- A skipped custom type resolves to Absent for any query that
+        -- references it, and that query's own Member/ParamsMember
+        -- resolution fails with "Custom type not found" -- caught the same
+        -- way any other unsupported shape is, cascading the skip onto every
+        -- dependent query.
+        let effectiveCustomTypes
+            : List Model.CustomType
+            = if    skip
+              then  Prelude.List.filter Model.CustomType typeSucceeds input.customTypes
+              else  input.customTypes
+
+        let lookup = buildLookup effectiveCustomTypes
+
+        -- Fail mode: identical to the pre-Skip code (traverseList straight
+        -- over input.customTypes), so its error message/path is unchanged.
+        let typesForCombine
             : Lude.Compiled.Type (List CustomTypeGen.Output)
             = Lude.Compiled.traverseList
                 Model.CustomType
                 CustomTypeGen.Output
                 (\(ct : Model.CustomType) -> CustomTypeGen.run config ct)
-                input.customTypes
+                effectiveCustomTypes
 
-        in  Lude.Compiled.map2
-              (List QueryGen.Output)
-              (List CustomTypeGen.Output)
-              Output
-              (combineOutputs config input)
-              compiledQueries
-              compiledTypes
+        let queryChecks
+            : List QueryCheck
+            = Prelude.List.map
+                Model.Query
+                QueryCheck
+                ( \(query : Model.Query) ->
+                    merge
+                      { Ok = \(_ : QueryGen.Output) -> { query, keep = True, warning = None Report }
+                      , Err = \(err : Report) -> { query, keep = False, warning = Some err }
+                      }
+                      (QueryGen.run config lookup query).result
+                )
+                input.queries
+
+        let effectiveQueries
+            : List Model.Query
+            = if    skip
+              then  Prelude.List.map
+                      QueryCheck
+                      Model.Query
+                      (\(qc : QueryCheck) -> qc.query)
+                      (Prelude.List.filter QueryCheck (\(qc : QueryCheck) -> qc.keep) queryChecks)
+              else  input.queries
+
+        -- Fail mode: identical to the pre-Skip code (traverseList straight
+        -- over input.queries), so its error message/path is unchanged.
+        let queriesForCombine
+            : Lude.Compiled.Type (List QueryGen.Output)
+            = Lude.Compiled.traverseList
+                Model.Query
+                QueryGen.Output
+                (\(query : Model.Query) -> QueryGen.run config lookup query)
+                effectiveQueries
+
+        let skipWarnings
+            : List Report
+            = if    skip
+              then    Prelude.List.unpackOptionals
+                        Report
+                        (Prelude.List.map Model.CustomType (Optional Report) typeWarning input.customTypes)
+                    # Prelude.List.unpackOptionals
+                        Report
+                        (Prelude.List.map QueryCheck (Optional Report) (\(qc : QueryCheck) -> qc.warning) queryChecks)
+              else  [] : List Report
+
+        let combined
+            : Lude.Compiled.Type Output
+            = Lude.Compiled.map2
+                (List QueryGen.Output)
+                (List CustomTypeGen.Output)
+                Output
+                (combineOutputs config input)
+                queriesForCombine
+                typesForCombine
+
+        in  combined // { warnings = combined.warnings # skipWarnings }
 
 in  Algebra.module Input Output run

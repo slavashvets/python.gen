@@ -1,9 +1,12 @@
 let Deps = ../Deps/package.dhall
 
+let OnUnsupported = ../Structures/OnUnsupported.dhall
+
 let Config =
       { packageName : Text
       , importName : Text
       , emitSync : Bool
+      , onUnsupported : OnUnsupported.Mode
       }
 
 let module =
