@@ -134,6 +134,11 @@ let buildLookup =
             \(name : Model.Name) ->
               let ct = entry.value
 
+              -- Text/equal is a pgn embedded-Dhall builtin, absent from the Dhall
+              -- standard 23.1 Prelude. PyIdent.dhall's replace-trick cannot stand in
+              -- here: this branch returns a structural TypeKind, not Text. gen-sdk's
+              -- Fixtures module relies on the same builtin; a kind tag or a Natural
+              -- index on Scalar.Custom is a planned upstream ask.
               in  if    Text/equal name.inSnakeCase ct.name.inSnakeCase
                   then  merge
                           { Composite =
