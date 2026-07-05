@@ -1,5 +1,8 @@
 # Upcoming
 
+- Added a `pgenie-python-gen` wheel channel (`wheel/`): the release build bundles
+  the resolved generator as an installable package with a `path`/`url`/`vendor`
+  CLI; publication to PyPI ships wired but disabled.
 - Keyword escaping (`PyIdent.dhall`) no longer needs the fork-only
   `Text/equal` builtin; it's rewritten against a `Text/replace`-based marker
   trick, since pgn's embedded `Text/replace` doesn't match a needle spanning

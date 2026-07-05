@@ -150,3 +150,121 @@ jobs:
           echo "Successfully created release v${{ inputs.version }}"
           echo "Release tag: v${{ inputs.version }}"
           echo "Artifact: resolved.dhall"
+
+  wheel:
+    name: Build and verify the wheel channel
+    needs: [validate, ci, release]
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          ref: ${{ github.ref }}
+          fetch-depth: 0
+
+      - name: Download the released resolved.dhall asset
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          gh release download "v${{ inputs.version }}" \
+            --repo "${{ github.repository }}" \
+            --pattern resolved.dhall \
+            --dir release-asset
+
+      - name: Stamp wheel metadata and stage the generator
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          cat > wheel/src/pgenie_python_gen/_meta.py <<'EOF'
+          version = "${{ inputs.version }}"
+          repo: str | None = "${{ github.repository }}"
+          release_url: str | None = "${{ github.server_url }}/${{ github.repository }}/releases/download/v${{ inputs.version }}/resolved.dhall"
+          EOF
+
+          cp release-asset/resolved.dhall wheel/src/pgenie_python_gen/resolved.dhall
+          cp LICENSE wheel/LICENSE
+
+      - name: Byte-assert the staged generator matches the released asset
+        shell: bash
+        run: |
+          set -euo pipefail
+          cmp release-asset/resolved.dhall wheel/src/pgenie_python_gen/resolved.dhall
+
+      - name: Install mise-managed tools
+        uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
+
+      - name: Build sdist and wheel
+        run: mise x -- uv build --sdist --wheel --out-dir wheel/dist wheel
+
+      - name: Assert resolved.dhall ships in both archives
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          wheel_file="$(ls wheel/dist/*.whl)"
+          sdist_file="$(ls wheel/dist/*.tar.gz)"
+
+          if ! unzip -l "$wheel_file" | grep -q 'pgenie_python_gen/resolved.dhall'; then
+            echo "::error::resolved.dhall missing from the wheel ($wheel_file)."
+            exit 1
+          fi
+          if ! tar tzf "$sdist_file" | grep -q 'src/pgenie_python_gen/resolved.dhall'; then
+            echo "::error::resolved.dhall missing from the sdist ($sdist_file)."
+            exit 1
+          fi
+
+      - name: Install into a clean venv and verify the CLI
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          wheel_file="$(ls wheel/dist/*.whl)"
+          mise x -- uv venv /tmp/wheel-venv
+          mise x -- uv pip install --python /tmp/wheel-venv/bin/python "$wheel_file"
+
+          got_version="$(/tmp/wheel-venv/bin/pgenie-python-gen version)"
+          if [[ "$got_version" != "${{ inputs.version }}" ]]; then
+            echo "::error::CLI version '$got_version' != release version '${{ inputs.version }}'."
+            exit 1
+          fi
+
+          bundled="$(/tmp/wheel-venv/bin/pgenie-python-gen path)"
+          cmp "$bundled" release-asset/resolved.dhall
+
+      - name: Upload the built distributions as workflow artifacts
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: pgenie-python-gen-dist
+          path: wheel/dist/*
+          if-no-files-found: error
+
+  publish-pypi:
+    # Publication is DISABLED. `if: false` is the kill switch: this job never
+    # runs. Enable it only after registering a PyPI Trusted Publisher for this
+    # workflow, then replace `if: false` with a real gate (a publish input or a
+    # tag filter). Do not add a pending publisher on PyPI until then.
+    name: Publish to PyPI (disabled; flip if:false to enable)
+    if: false
+    needs: wheel
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+      - name: Download the built distributions
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: pgenie-python-gen-dist
+          path: dist
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@cef221092ed1bacb1cc03d23a2d87d1d172e277b # v1.14.0
+        with:
+          packages-dir: dist

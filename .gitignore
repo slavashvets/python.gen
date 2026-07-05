@@ -17,6 +17,14 @@ spikes/*/proj/artifacts/
 # /tmp/package.dhall output before upload
 /resolved.dhall
 
+# The wheel channel (wheel/) bundles resolved.dhall, but it is a build artifact
+# materialized only by release.yml; it must never be committed. The LICENSE copy
+# is likewise placed into wheel/ at build time so hatchling can bundle it.
+/wheel/src/pgenie_python_gen/resolved.dhall
+/wheel/LICENSE
+/wheel/dist/
+/wheel/**/__pycache__/
+
 # The freeze is a generator-hash cache the harness always drops before generating
 # (conftest generated_tree, test_unsupported_types); committing it only lets it
 # drift from the working-tree generator, so keep it untracked.

@@ -1,0 +1,28 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "pgenie-python-gen"
+description = "The python.gen frozen Dhall generator, shipped as an installable wheel."
+requires-python = ">=3.12"
+license = "GPL-3.0-or-later"
+dynamic = ["version"]
+dependencies = []
+
+[project.scripts]
+pgenie-python-gen = "pgenie_python_gen.__main__:main"
+
+# Version is stamped into _meta.py at build time (release.yml); read it from there
+# so the wheel metadata and the CLI report the same generator version.
+[tool.hatch.version]
+path = "src/pgenie_python_gen/_meta.py"
+pattern = '^version = "(?P<version>[^"]+)"'
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/pgenie_python_gen"]
+
+# resolved.dhall is materialized only by the release build and is VCS-ignored;
+# force it into both distributions so the shipped wheel actually carries it.
+[tool.hatch.build]
+artifacts = ["src/pgenie_python_gen/resolved.dhall"]

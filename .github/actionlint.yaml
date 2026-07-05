@@ -1,0 +1,8 @@
+# The PyPI publish job in release.yml is intentionally disabled with `if: false`
+# as a kill switch until a PyPI Trusted Publisher is registered. actionlint's
+# if-cond rule flags any constant condition; scope that single deliberate
+# exception to release.yml so every other check still applies strictly.
+paths:
+  .github/workflows/release.yml:
+    ignore:
+      - 'constant expression "false" in condition'
