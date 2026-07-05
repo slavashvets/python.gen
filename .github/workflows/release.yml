@@ -1,0 +1,157 @@
+name: Release Dhall Frozen Package
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Release version in SemVer format (e.g. 1.2.3)
+        required: true
+        type: string
+  workflow_call:
+    inputs:
+      version:
+        description: Release version in SemVer format (e.g. 1.2.3)
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  validate:
+    name: Validate release
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Validate SemVer format
+        shell: bash
+        run: |
+          if ! [[ "${{ inputs.version }}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Version '${{ inputs.version }}' is not valid SemVer (expected X.Y.Z)."
+            exit 1
+          fi
+
+      - name: Checkout repository
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          ref: ${{ github.ref }}
+          fetch-depth: 0
+
+      - name: Validate changelog contains Upcoming section
+        shell: bash
+        run: |
+          if ! grep -q '^# Upcoming$' CHANGELOG.md; then
+            echo "::error::CHANGELOG.md must contain a '# Upcoming' section before releasing."
+            exit 1
+          fi
+
+      - name: Check changelog release header
+        shell: bash
+        run: |
+          expected_heading="# v${{ inputs.version }}"
+          top_heading="$(head -n 1 CHANGELOG.md)"
+
+          if [[ "$top_heading" != '# Upcoming' && "$top_heading" != "$expected_heading" ]]; then
+            echo "::error::CHANGELOG.md must start with either '# Upcoming' or '$expected_heading' before releasing."
+            exit 1
+          fi
+
+      - name: Check tag does not already exist
+        shell: bash
+        run: |
+          if git ls-remote --tags origin "refs/tags/v${{ inputs.version }}" | grep -q .; then
+            echo "::error::Tag v${{ inputs.version }} already exists. Choose a different version."
+            exit 1
+          fi
+
+  ci:
+    name: Run CI
+    needs: validate
+    uses: ./.github/workflows/ci.yml
+    secrets: inherit
+
+  release:
+    name: Prepare and create release
+    needs: [validate, ci]
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          ref: ${{ github.ref }}
+          fetch-depth: 0
+
+      - name: Resolve Dhall
+        id: resolve
+        uses: nikita-volkov/dhall-resolve.github-action@7caaf1fdb40ac864bc02e37575f577ee084713a8 # v3
+        with:
+          file: gen/Gen.dhall
+          minify: true
+
+      # The action always writes to a fixed /tmp/package.dhall regardless of the
+      # source file name; rename to the release asset name it's actually shipped as.
+      - name: Name the release asset
+        run: cp "${{ steps.resolve.outputs.path }}" resolved.dhall
+
+      - name: Prepare changelog for release
+        id: commit
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          expected_heading="# v${{ inputs.version }}"
+          top_heading="$(head -n 1 CHANGELOG.md)"
+          needs_commit=false
+
+          if [[ "$top_heading" == '# Upcoming' ]]; then
+            perl -0pi -e 's/^# Upcoming$/# v${{ inputs.version }}/m' CHANGELOG.md
+            needs_commit=true
+          elif [[ "$top_heading" != "$expected_heading" ]]; then
+            echo "::error::CHANGELOG.md must start with either '# Upcoming' or '$expected_heading' before releasing."
+            exit 1
+          fi
+
+          asset_pattern="https://github.com/${{ github.repository }}/releases/download/v[0-9]+\.[0-9]+\.[0-9]+/resolved\.dhall"
+          if grep -qE "$asset_pattern" README.md; then
+            sed -i -E "s|$asset_pattern|https://github.com/${{ github.repository }}/releases/download/v${{ inputs.version }}/resolved.dhall|g" README.md
+            needs_commit=true
+          fi
+
+          if [[ "$needs_commit" == true ]]; then
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git add CHANGELOG.md README.md
+            git commit -m "Prepare v${{ inputs.version }} release"
+            git push origin HEAD:"${{ github.ref }}"
+          fi
+
+          echo "commit-sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
+        with:
+          tag_name: v${{ inputs.version }}
+          name: "v${{ inputs.version }}"
+          body: |
+            ## Dhall Frozen Package Release
+
+            This release contains the frozen Dhall package with all remote imports resolved and compacted via CSE.
+
+            **Commit**: ${{ steps.commit.outputs.commit-sha }}
+            **Workflow Run**: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+            The frozen package is CORS-compliant and self-contained, suitable for direct use without network dependencies.
+          files: |
+            resolved.dhall
+          draft: false
+          prerelease: false
+          fail_on_unmatched_files: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Deployment summary
+        run: |
+          echo "Successfully created release v${{ inputs.version }}"
+          echo "Release tag: v${{ inputs.version }}"
+          echo "Artifact: resolved.dhall"

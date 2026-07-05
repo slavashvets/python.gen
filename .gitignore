@@ -13,6 +13,10 @@ spikes/*/proj/artifacts/
 /contract-shell/
 /contract-pyrightconfig.json
 
+# release.yml's Dhall-resolve release asset, renamed from the action's fixed
+# /tmp/package.dhall output before upload
+/resolved.dhall
+
 # The freeze is a generator-hash cache the harness always drops before generating
 # (conftest generated_tree, test_unsupported_types); committing it only lets it
 # drift from the working-tree generator, so keep it untracked.

@@ -1,6 +1,4 @@
-# Changelog
-
-## Upcoming
+# Upcoming
 
 - Keyword escaping (`PyIdent.dhall`) no longer needs the fork-only
   `Text/equal` builtin; it's rewritten against a `Text/replace`-based marker

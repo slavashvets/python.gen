@@ -622,3 +622,18 @@ for a portability nobody asked for and would dilute the strict-typed,
 zero-dependency surface. If the driver ever changes, the runtime templates
 and the Surface token table are the blast radius; the type layer and the
 SQL rendering are largely driver-agnostic.
+
+---
+
+## 17. Development
+
+CI runs two independent jobs (`.github/workflows/ci.yml`): `harness` (the
+pytest suite against a live Postgres) and `contract` (compiles gen-sdk's
+`Fixtures.Exhaustive` via `tests/Exhaustive.dhall` and runs basedpyright
+strict on the result). The `contract` job needs `nikita-volkov/dhall-directory-tree.github-action`,
+a Docker action bundling a forked Dhall evaluator; the local `dhall` CLI most
+people have installed is the standard dhall-lang build and does not
+understand `Text/equal`, so it cannot run `tests/Exhaustive.dhall` directly.
+Reproduce the `contract` job locally with [`act`](https://github.com/nektos/act)
+(not installed in this environment; `act -j contract` pulls the same pinned
+Docker action and runs the job as GitHub would).
