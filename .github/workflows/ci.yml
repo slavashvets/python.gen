@@ -54,16 +54,18 @@ jobs:
       # A skip-mode pgn generate peaks past the runner's 7.8 GiB RAM + 3 GiB
       # swap (the memory watchdog killed the VM on the last suite test);
       # extra swap lets the GC spill instead.
+      # /swapfile is taken: the runner image's stock 3 GiB swap already
+      # lives there, so the extra file goes on the /mnt ephemeral disk.
       - name: Add swap headroom for pgn generate
         shell: bash
         run: |
           set -euo pipefail
 
-          df -h /
-          sudo fallocate -l 12G /swapfile
-          sudo chmod 600 /swapfile
-          sudo mkswap /swapfile
-          sudo swapon /swapfile
+          df -h / /mnt
+          sudo fallocate -l 12G /mnt/swapfile
+          sudo chmod 600 /mnt/swapfile
+          sudo mkswap /mnt/swapfile
+          sudo swapon /mnt/swapfile
           free -h
 
       - name: Install mise-managed tools
