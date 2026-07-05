@@ -89,11 +89,6 @@ jobs:
           file: gen/Gen.dhall
           minify: true
 
-      # The action always writes to a fixed /tmp/package.dhall regardless of the
-      # source file name; rename to the release asset name it's actually shipped as.
-      - name: Name the release asset
-        run: cp "${{ steps.resolve.outputs.path }}" resolved.dhall
-
       - name: Prepare changelog for release
         id: commit
         shell: bash
@@ -143,7 +138,7 @@ jobs:
 
             The frozen package is CORS-compliant and self-contained, suitable for direct use without network dependencies.
           files: |
-            resolved.dhall
+            ${{ steps.resolve.outputs.path }}
           draft: false
           prerelease: false
           fail_on_unmatched_files: true
