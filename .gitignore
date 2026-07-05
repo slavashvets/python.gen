@@ -7,6 +7,12 @@ __pycache__/
 tests/fixture-project/artifacts/
 spikes/*/proj/artifacts/
 
+# scratch output from the CI contract job (.github/workflows/ci.yml), also
+# produced by a local `act -j contract` run
+/contract-output/
+/contract-shell/
+/contract-pyrightconfig.json
+
 # The freeze is a generator-hash cache the harness always drops before generating
 # (conftest generated_tree, test_unsupported_types); committing it only lets it
 # drift from the working-tree generator, so keep it untracked.

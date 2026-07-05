@@ -1,0 +1,150 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_call:
+    inputs:
+      ref:
+        description: Git ref to test (defaults to current SHA)
+        required: false
+        type: string
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  harness:
+    name: Generator harness (pytest)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      PGN_TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/postgres?sslmode=disable
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+
+      - name: Install mise-managed tools
+        uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
+
+      - name: Assert the pinned pgn version
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          version="$(mise x -- pgn --version)"
+          if [[ "$version" != "0.6.5" ]]; then
+            echo "::error::Expected pgn 0.6.5 (mise.toml pin), got '$version'."
+            exit 1
+          fi
+
+      - name: Sync the harness venv
+        run: mise x -- uv sync
+
+      - name: Run the generator harness tests
+        run: mise x -- uv run pytest tests -q
+
+  contract:
+    name: Generator contract (Exhaustive fixture)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+
+      # A plain, standard-Dhall evaluator cannot run this: gen/Interpreters/Project.dhall's
+      # buildLookup and gen-sdk's own Fixtures.Exhaustive both use Text/equal, a builtin
+      # from pgn's forked Dhall, absent from the upstream dhall-lang Prelude. This action
+      # bundles that same fork.
+      - name: Generate output from Dhall
+        uses: nikita-volkov/dhall-directory-tree.github-action@60a18dc647d6daea805263ea0fed7bb8011f3bcd # v2
+        with:
+          dhall_file: tests/Exhaustive.dhall
+          output_dir: contract-output
+
+      - name: Assert the compile did not fail
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [[ -f contract-output/error.yaml ]]; then
+            echo "::error::Generator reported a hard failure (onUnsupported: Skip should have prevented this)."
+            cat contract-output/error.yaml
+            exit 1
+          fi
+
+          if [[ -f contract-output/warnings.yaml ]]; then
+            echo "::notice::Generator emitted warnings (expected: the Exhaustive fixture covers PG types this generator does not support, dropped under onUnsupported: Skip)."
+            cat contract-output/warnings.yaml
+          fi
+
+      - name: Build a synthetic consumer shell
+        run: .github/scripts/build-contract-shell.sh contract-output contract-shell
+
+      - name: Install mise-managed tools
+        uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
+
+      - name: Create a venv and install psycopg + basedpyright
+        run: |
+          set -euo pipefail
+
+          mise x -- uv venv contract-shell/.venv
+          mise x -- uv pip install --python contract-shell/.venv/bin/python "psycopg[binary]>=3.2" basedpyright
+
+      - name: basedpyright strict on the generated package
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          cat > contract-pyrightconfig.json <<'JSON'
+          {
+            "pythonVersion": "3.12",
+            "typeCheckingMode": "strict",
+            "include": ["contract-shell/src"],
+            "venvPath": "contract-shell",
+            "venv": ".venv",
+            "reportMissingModuleSource": false
+          }
+          JSON
+
+          output="$(contract-shell/.venv/bin/basedpyright --project contract-pyrightconfig.json --outputjson)" || true
+          echo "$output" | jq .
+
+          files=$(jq '.summary.filesAnalyzed' <<<"$output")
+          errors=$(jq '.summary.errorCount' <<<"$output")
+          warnings=$(jq '.summary.warningCount' <<<"$output")
+
+          if [[ "$files" -eq 0 ]]; then
+            echo "::error::basedpyright analyzed no files; bad include path?"
+            exit 1
+          fi
+          if [[ "$errors" -ne 0 || "$warnings" -ne 0 ]]; then
+            echo "::error::basedpyright strict reported issues (errors=$errors warnings=$warnings)."
+            exit 1
+          fi
