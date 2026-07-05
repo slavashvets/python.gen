@@ -1,0 +1,7 @@
+composite:
+  x:
+    type: float8
+    not_null: false
+  y:
+    type: float8
+    not_null: false

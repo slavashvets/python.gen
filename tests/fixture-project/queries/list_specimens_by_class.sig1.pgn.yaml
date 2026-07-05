@@ -1,0 +1,14 @@
+idempotent: false
+parameters:
+  class:
+    type: text
+    not_null: false
+result:
+  cardinality: many
+  columns:
+    id:
+      type: int8
+      not_null: true
+    title:
+      type: text
+      not_null: true

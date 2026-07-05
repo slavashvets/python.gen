@@ -1,0 +1,20 @@
+[project]
+name = "pgenie-python-gen-harness"
+version = "0.0.0"
+requires-python = ">=3.12"
+dependencies = []
+
+[dependency-groups]
+dev = [
+    "pytest>=8",
+    "psycopg[binary]>=3.2",
+    "basedpyright",
+]
+
+[tool.uv]
+# This project relies on mise for the Python interpreter, matching the root.
+python-preference = "only-system"
+python-downloads = "never"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

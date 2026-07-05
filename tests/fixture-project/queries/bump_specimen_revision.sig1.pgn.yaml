@@ -1,0 +1,5 @@
+idempotent: false
+parameters:
+  id:
+    type: int8
+    not_null: false

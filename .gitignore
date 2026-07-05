@@ -1,0 +1,19 @@
+.venv/
+.uv_cache/
+.pytest_cache/
+__pycache__/
+
+# generator output produced by `pgn generate`
+tests/fixture-project/artifacts/
+spikes/*/proj/artifacts/
+
+# The freeze is a generator-hash cache the harness always drops before generating
+# (conftest generated_tree, test_unsupported_types); committing it only lets it
+# drift from the working-tree generator, so keep it untracked.
+tests/fixture-project/freeze1.pgn.yaml
+
+# Belt-and-suspenders re-include of the pgn public-schema type signatures. The
+# repo-root .gitignore now anchors its MkDocs rule to /public/, but keep this so a
+# regression to an unanchored `public/` rule cannot silently drop these sigs.
+!tests/fixture-project/types/public/
+!tests/fixture-project/types/public/*.sig1.pgn.yaml

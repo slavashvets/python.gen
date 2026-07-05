@@ -1,0 +1,26 @@
+idempotent: false
+parameters:
+  title_like:
+    type: text
+    not_null: false
+  meta_filter:
+    type: jsonb
+    not_null: false
+  label:
+    type: text
+    not_null: false
+result:
+  cardinality: many
+  columns:
+    id:
+      type: int8
+      not_null: true
+    title:
+      type: text
+      not_null: true
+    label:
+      type: text
+      not_null: true
+    meta:
+      type: jsonb
+      not_null: true

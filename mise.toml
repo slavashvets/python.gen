@@ -1,0 +1,15 @@
+# This is a standalone repo (unlike the monorepo copy this was extracted from,
+# which inherits pgn from its repo-root mise.toml), so pgn is pinned here.
+[tools]
+"github:pgenie-io/pgenie" = { version = "v0.6.5", exe = "pgn" }
+uv = "latest"
+python = "3.12"
+
+[tasks.install]
+description = "Sync the harness venv"
+run = "uv sync"
+
+[tasks.test]
+description = "Run the generator harness tests"
+depends = ["install"]
+run = "uv run pytest tests -q"

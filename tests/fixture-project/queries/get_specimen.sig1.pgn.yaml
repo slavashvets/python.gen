@@ -1,0 +1,104 @@
+idempotent: false
+parameters:
+  id:
+    type: int8
+    not_null: false
+result:
+  cardinality: zero_or_one
+  columns:
+    id:
+      type: int8
+      not_null: true
+    pub_id:
+      type: uuid
+      not_null: true
+    flag:
+      type: bool
+      not_null: true
+    small:
+      type: int2
+      not_null: true
+    medium:
+      type: int4
+      not_null: true
+    large:
+      type: int8
+      not_null: true
+    ratio:
+      type: float4
+      not_null: true
+    precise:
+      type: float8
+      not_null: true
+    title:
+      type: text
+      not_null: true
+    code:
+      type: varchar
+      not_null: true
+    letter:
+      type: bpchar
+      not_null: true
+    born_on:
+      type: date
+      not_null: true
+    created_at:
+      type: timestamptz
+      not_null: true
+    amount:
+      type: numeric
+      not_null: true
+    blob:
+      type: bytea
+      not_null: true
+    doc_json:
+      type: json
+      not_null: true
+    doc_jsonb:
+      type: jsonb
+      not_null: true
+    maybe_text:
+      type: text
+      not_null: false
+    maybe_int:
+      type: int4
+      not_null: false
+    maybe_uuid:
+      type: uuid
+      not_null: false
+    maybe_ts:
+      type: timestamptz
+      not_null: false
+    maybe_num:
+      type: numeric
+      not_null: false
+    tags:
+      type: text
+      not_null: true
+      dims: 1
+      element_not_null: false
+    related_ids:
+      type: uuid
+      not_null: false
+      dims: 1
+      element_not_null: false
+    grid:
+      type: int4
+      not_null: false
+      dims: 1
+      element_not_null: false
+    feeling:
+      type: mood
+      not_null: true
+    origin:
+      type: point_2_d
+      not_null: false
+    label:
+      type: text
+      not_null: true
+    rev:
+      type: int4
+      not_null: true
+    meta:
+      type: jsonb
+      not_null: true

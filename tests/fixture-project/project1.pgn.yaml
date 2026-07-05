@@ -1,0 +1,10 @@
+space: python-gen
+name: fixture
+version: 0.0.0
+postgres: 18
+artifacts:
+  python:
+    gen: ../../gen/Gen.dhall
+    config:
+      packageName: specimen-client
+      emitSync: true

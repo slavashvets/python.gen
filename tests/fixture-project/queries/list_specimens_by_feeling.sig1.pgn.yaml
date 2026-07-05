@@ -1,0 +1,37 @@
+idempotent: false
+parameters:
+  feeling:
+    type: mood
+    not_null: false
+result:
+  cardinality: many
+  columns:
+    id:
+      type: int8
+      not_null: true
+    pub_id:
+      type: uuid
+      not_null: true
+    feeling:
+      type: mood
+      not_null: true
+    title:
+      type: text
+      not_null: true
+    label:
+      type: text
+      not_null: true
+    rev:
+      type: int4
+      not_null: true
+    origin:
+      type: point_2_d
+      not_null: false
+    tags:
+      type: text
+      not_null: true
+      dims: 1
+      element_not_null: false
+    meta:
+      type: jsonb
+      not_null: true

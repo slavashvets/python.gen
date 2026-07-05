@@ -1,0 +1,15 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "specimen-client"
+version = "0.0.0"
+requires-python = ">=3.12"
+dependencies = ["psycopg>=3.2"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/specimen_client"]
+
+[tool.ruff]
+exclude = ["src/specimen_client/_generated"]
