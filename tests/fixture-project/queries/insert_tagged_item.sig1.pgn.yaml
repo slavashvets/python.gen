@@ -1,0 +1,20 @@
+idempotent: false
+parameters:
+  name:
+    type: text
+    not_null: true
+  tag:
+    type: tag_value
+    not_null: true
+result:
+  cardinality: one
+  columns:
+    id:
+      type: int8
+      not_null: true
+    name:
+      type: text
+      not_null: true
+    tag:
+      type: tag_value
+      not_null: true

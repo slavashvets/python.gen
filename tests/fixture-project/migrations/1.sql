@@ -24,6 +24,20 @@ create domain revision as integer
 create domain jsonb_object as jsonb
   check (jsonb_typeof(value) = 'object');
 
+-- Single-field composite fixture: exercises the composite-bind edge case where
+-- a one-field tuple literal needs a trailing comma to stay a tuple in Python
+-- (point2d's two-field tuple never needed one, so its golden never exercised
+-- this path).
+create type tag_value as (
+  value text
+);
+
+create table tagged_item (
+  id   int8 primary key generated always as identity,
+  name text not null,
+  tag  tag_value not null
+);
+
 create table specimen (
   id            int8 primary key generated always as identity,
   pub_id        uuid not null default gen_random_uuid(),

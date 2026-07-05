@@ -4,10 +4,13 @@ from ._generated._runtime import JsonValue as JsonValue, NoRowError as NoRowErro
 
 from ._generated.types.mood import Mood as Mood
 from ._generated.types.point_2_d import Point2D as Point2D
+from ._generated.types.tag_value import TagValue as TagValue
 
 from ._generated._rows import (
     GetSpecimenRow as GetSpecimenRow,
+    GetTaggedItemRow as GetTaggedItemRow,
     InsertSpecimenRow as InsertSpecimenRow,
+    InsertTaggedItemRow as InsertTaggedItemRow,
     ListSpecimensByClassRow as ListSpecimensByClassRow,
     ListSpecimensByFeelingRow as ListSpecimensByFeelingRow,
     ListSpecimensByIdsRow as ListSpecimensByIdsRow,
@@ -18,7 +21,9 @@ from ._generated._rows import (
 
 from ._generated.statements.bump_specimen_revision import bump_specimen_revision as bump_specimen_revision
 from ._generated.statements.get_specimen import get_specimen as get_specimen
+from ._generated.statements.get_tagged_item import get_tagged_item as get_tagged_item
 from ._generated.statements.insert_specimen import insert_specimen as insert_specimen
+from ._generated.statements.insert_tagged_item import insert_tagged_item as insert_tagged_item
 from ._generated.statements.list_specimens_by_class import list_specimens_by_class as list_specimens_by_class
 from ._generated.statements.list_specimens_by_feeling import list_specimens_by_feeling as list_specimens_by_feeling
 from ._generated.statements.list_specimens_by_ids import list_specimens_by_ids as list_specimens_by_ids
@@ -31,8 +36,11 @@ __all__ = [
     "NoRowError",
     "Mood",
     "Point2D",
+    "TagValue",
     "GetSpecimenRow",
+    "GetTaggedItemRow",
     "InsertSpecimenRow",
+    "InsertTaggedItemRow",
     "ListSpecimensByClassRow",
     "ListSpecimensByFeelingRow",
     "ListSpecimensByIdsRow",
@@ -41,7 +49,9 @@ __all__ = [
     "SearchSpecimensRow",
     "bump_specimen_revision",
     "get_specimen",
+    "get_tagged_item",
     "insert_specimen",
+    "insert_tagged_item",
     "list_specimens_by_class",
     "list_specimens_by_feeling",
     "list_specimens_by_ids",

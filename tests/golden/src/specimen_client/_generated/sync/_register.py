@@ -7,7 +7,7 @@ from psycopg.types import TypeInfo
 from psycopg.types.composite import CompositeInfo, register_composite
 
 
-_COMPOSITE_TYPES = ("public.point2d",)
+_COMPOSITE_TYPES = ("public.point2d", "public.tag_value",)
 _ENUM_TYPES = ("public.mood",)
 
 

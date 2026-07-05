@@ -250,16 +250,31 @@ let run =
         -- a dataclass, so a composite param is converted to its field tuple.
         let compositeBind =
               \(fields : List CustomKind.CompositeField) ->
-                let tupleExpr =
-                      "("
-                      ++  Deps.Prelude.Text.concatMapSep
-                            ", "
-                            CustomKind.CompositeField
-                            ( \(f : CustomKind.CompositeField) ->
-                                "${fieldName}.${f.fieldName}"
-                            )
-                            fields
-                      ++  ")"
+                let joinedFields =
+                      Deps.Prelude.Text.concatMapSep
+                        ", "
+                        CustomKind.CompositeField
+                        ( \(f : CustomKind.CompositeField) ->
+                            "${fieldName}.${f.fieldName}"
+                        )
+                        fields
+
+                -- concatMapSep never emits a separator for a single-element list, so
+                -- a one-field composite would render "(x.f)": parens around a bare
+                -- expression, not a tuple. Python only treats trailing-comma parens
+                -- as a 1-tuple, so force it for exactly one field; concatMapSep
+                -- already inserts the internal comma for two or more.
+                let trailingComma =
+                      if    Deps.Prelude.Natural.equal
+                              ( Deps.Prelude.List.length
+                                  CustomKind.CompositeField
+                                  fields
+                              )
+                              1
+                      then  ","
+                      else  ""
+
+                let tupleExpr = "(" ++ joinedFields ++ trailingComma ++ ")"
 
                 in  if    input.isNullable
                     then  "None if ${fieldName} is None else ${tupleExpr}"

@@ -1,0 +1,4 @@
+composite:
+  value:
+    type: text
+    not_null: false

@@ -2,3 +2,4 @@
 
 from .mood import Mood as Mood
 from .point_2_d import Point2D as Point2D
+from .tag_value import TagValue as TagValue

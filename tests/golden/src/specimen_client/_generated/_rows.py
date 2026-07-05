@@ -13,6 +13,7 @@ from ._runtime import JsonValue
 from ._runtime import require_array
 from .types.mood import Mood
 from .types.point_2_d import Point2D
+from .types.tag_value import TagValue
 
 
 @dataclass(frozen=True, slots=True)
@@ -85,6 +86,21 @@ def decode_get_specimen(row: Mapping[str, object]) -> GetSpecimenRow:
 
 
 @dataclass(frozen=True, slots=True)
+class GetTaggedItemRow:
+    id: int
+    name: str
+    tag: TagValue
+
+
+def decode_get_tagged_item(row: Mapping[str, object]) -> GetTaggedItemRow:
+    return GetTaggedItemRow(
+        id=cast(int, row["id"]),
+        name=cast(str, row["name"]),
+        tag=TagValue(*cast(tuple[str | None], row["tag"])),
+    )
+
+
+@dataclass(frozen=True, slots=True)
 class InsertSpecimenRow:
     id: int
     pub_id: UUID
@@ -152,6 +168,21 @@ def decode_insert_specimen(row: Mapping[str, object]) -> InsertSpecimenRow:
         label=cast(str, row["label"]),
         rev=cast(int, row["rev"]),
         meta=cast(JsonValue, row["meta"]),
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class InsertTaggedItemRow:
+    id: int
+    name: str
+    tag: TagValue
+
+
+def decode_insert_tagged_item(row: Mapping[str, object]) -> InsertTaggedItemRow:
+    return InsertTaggedItemRow(
+        id=cast(int, row["id"]),
+        name=cast(str, row["name"]),
+        tag=TagValue(*cast(tuple[str | None], row["tag"])),
     )
 
 

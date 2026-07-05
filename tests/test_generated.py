@@ -476,3 +476,69 @@ def test_roundtrip_sync_and_cross_surface_identity(full_package: Path, roundtrip
         assert bumped.rev == 2
     finally:
         conn.close()
+
+
+def test_roundtrip_single_field_composite(full_package: Path, roundtrip_db: str) -> None:
+    """Regression test for compositeBind on a one-field composite.
+
+    concatMapSep joins a single-element field list with no separator, so an
+    unguarded tuple expression would render "(x.f)": a parenthesized value, not
+    a tuple, which psycopg would try to adapt as the bare field type instead of
+    the composite. Exercises the param bind (insert) and the result-column
+    decode (RETURNING and a plain SELECT).
+    """
+    _apply_migrations(roundtrip_db)
+    import_module = _import_client(full_package)
+
+    register = import_module("specimen_client._generated._register")
+    tag_mod = import_module("specimen_client._generated.types.tag_value")
+    insert = import_module("specimen_client._generated.statements.insert_tagged_item")
+    get = import_module("specimen_client._generated.statements.get_tagged_item")
+
+    TagValue = tag_mod.TagValue
+
+    async def scenario() -> None:
+        conn = await psycopg.AsyncConnection.connect(roundtrip_db, autocommit=True)
+        try:
+            await register.register_types(conn)
+
+            inserted = await insert.insert_tagged_item(conn, name="widget", tag=TagValue(value="blue"))
+            assert isinstance(inserted.tag, TagValue)
+            assert inserted.tag == TagValue(value="blue")
+
+            hit = await get.get_tagged_item(conn, id=inserted.id)
+            assert hit is not None
+            assert isinstance(hit.tag, TagValue)
+            assert hit.tag == TagValue(value="blue")
+            assert await get.get_tagged_item(conn, id=inserted.id + 10_000) is None
+        finally:
+            await conn.close()
+
+    asyncio.run(scenario())
+
+
+def test_roundtrip_single_field_composite_sync(full_package: Path, roundtrip_db: str) -> None:
+    """Sync-surface counterpart of test_roundtrip_single_field_composite."""
+    _apply_migrations(roundtrip_db)
+    import_module = _import_client(full_package)
+
+    register = import_module("specimen_client._generated.sync._register")
+    tag_mod = import_module("specimen_client._generated.types.tag_value")
+    insert = import_module("specimen_client._generated.sync.statements.insert_tagged_item")
+    get = import_module("specimen_client._generated.sync.statements.get_tagged_item")
+
+    TagValue = tag_mod.TagValue
+
+    conn = psycopg.connect(roundtrip_db, autocommit=True)
+    try:
+        register.register_types(conn)
+
+        inserted = insert.insert_tagged_item(conn, name="widget", tag=TagValue(value="blue"))
+        assert isinstance(inserted.tag, TagValue)
+        assert inserted.tag == TagValue(value="blue")
+
+        hit = get.get_tagged_item(conn, id=inserted.id)
+        assert hit is not None
+        assert hit.tag == TagValue(value="blue")
+    finally:
+        conn.close()
