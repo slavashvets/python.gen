@@ -51,6 +51,21 @@ jobs:
         with:
           ref: ${{ inputs.ref || github.sha }}
 
+      # A skip-mode pgn generate peaks past the runner's 7.8 GiB RAM + 3 GiB
+      # swap (the memory watchdog killed the VM on the last suite test);
+      # extra swap lets the GC spill instead.
+      - name: Add swap headroom for pgn generate
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          df -h /
+          sudo fallocate -l 12G /swapfile
+          sudo chmod 600 /swapfile
+          sudo mkswap /swapfile
+          sudo swapon /swapfile
+          free -h
+
       - name: Install mise-managed tools
         uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
 
