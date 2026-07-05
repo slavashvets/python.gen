@@ -51,17 +51,17 @@ jobs:
         with:
           ref: ${{ inputs.ref || github.sha }}
 
-      # A skip-mode pgn generate peaks past the runner's 7.8 GiB RAM + 3 GiB
-      # swap (the memory watchdog killed the VM on the last suite test);
-      # extra swap lets the GC spill instead.
-      # /swapfile is taken: the runner image's stock 3 GiB swap already
-      # lives there, so the extra file goes on the /mnt ephemeral disk.
+      # A single-artifact pgn generate peaks at ~6.5 GB RSS on this runner
+      # (memory goes to normalizing the generator closure, near-independent
+      # of the query count), which flirts with the 7.8 GiB RAM + 3 GiB stock
+      # swap and got the VM killed by the memory watchdog mid-suite; extra
+      # swap lets the GC spill instead. /swapfile is taken by the image's
+      # stock swap, so the extra file goes on the /mnt ephemeral disk.
       - name: Add swap headroom for pgn generate
         shell: bash
         run: |
           set -euo pipefail
 
-          df -h / /mnt
           sudo fallocate -l 12G /mnt/swapfile
           sudo chmod 600 /mnt/swapfile
           sudo mkswap /mnt/swapfile
@@ -103,18 +103,6 @@ jobs:
           _ = p.write_text(head.rstrip() + "\n")
           EOF
           cat tests/fixture-project/project1.pgn.yaml
-
-      - name: Canary timing for pgn generate
-        shell: bash
-        run: |
-          set -uo pipefail
-
-          nproc
-          free -h
-          cd tests/fixture-project
-          rm -f freeze1.pgn.yaml
-          /usr/bin/time -v mise x -- pgn --database-url "$PGN_TEST_DATABASE_URL" generate 2>&1 | tail -30
-          rm -rf artifacts freeze1.pgn.yaml
 
       - name: Run the generator harness tests
         env:
