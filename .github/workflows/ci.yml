@@ -68,8 +68,19 @@ jobs:
       - name: Sync the harness venv
         run: mise x -- uv sync
 
+      - name: Canary timing for pgn generate
+        shell: bash
+        run: |
+          set -uo pipefail
+
+          cd tests/fixture-project
+          rm -f freeze1.pgn.yaml
+          /usr/bin/time -v mise x -- pgn --database-url "$PGN_TEST_DATABASE_URL" generate 2>&1 | tail -30
+
       - name: Run the generator harness tests
-        run: mise x -- uv run pytest tests -q --durations=10
+        env:
+          PYTHONUNBUFFERED: "1"
+        run: mise x -- uv run pytest tests -v --durations=10
 
   contract:
     name: Generator contract (Exhaustive fixture)
