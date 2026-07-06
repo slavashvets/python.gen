@@ -15,7 +15,6 @@ import psycopg
 from psycopg.conninfo import conninfo_to_dict
 
 HERE = Path(__file__).resolve().parent
-REPO_ROOT = HERE.parents[2]
 GEN_DIR = HERE.parent / "gen"
 FIXTURE_PROJECT = HERE / "fixture-project"
 GOLDEN_DIR = HERE / "golden"
@@ -24,7 +23,7 @@ GOLDEN_DIR = HERE / "golden"
 # target database itself. Default points at a local Postgres on the standard port;
 # override with PGN_TEST_DATABASE_URL for a non-default instance (e.g. pg0 on 54321).
 DEFAULT_ADMIN_URL = "postgresql://postgres:postgres@localhost:5432/postgres?sslmode=disable"
-PROTECTED_DATABASES = frozenset()
+PROTECTED_DATABASES = frozenset({"postgres", "template0", "template1"})
 
 
 def admin_database_url() -> str:

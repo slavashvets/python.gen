@@ -44,7 +44,7 @@ def test_fixture_project_analyses_clean(pgn_bin: str, pgn_admin_url: str, fixtur
 
     pgn spins up its own temp database from the admin URL, applies the
     migrations, prepares every query, then drops that DB. A non-zero exit means
-    the fixture drifted away from what pgn 0.6.2 accepts.
+    the fixture drifted away from what the pinned pgn accepts.
     """
     result = run_pgn(pgn_bin, pgn_admin_url, fixture_copy, "analyse")
     assert result.returncode == 0, f"pgn analyse failed:\n{result.stdout}\n{result.stderr}"
@@ -324,7 +324,7 @@ def test_roundtrip_type_mappings(full_package: Path, roundtrip_db: str) -> None:
             # (list[T | None] | None). NOTE: the generator's non-null-element
             # branch (list[T]) is not covered by this fixture because the
             # single-table specimen schema produces no query shape under which pgn
-            # 0.6.2 infers element_not_null:true (= ANY and unnest forms against
+            # infers element_not_null:true (= ANY and unnest forms against
             # specimen all yield false), and test_committed_sig_files_match_fresh_analysis
             # pins every fixture sig to fresh analysis, so a true flag cannot be
             # committed here. The branch ships in the real client

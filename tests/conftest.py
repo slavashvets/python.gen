@@ -1,7 +1,7 @@
 """Shared fixtures for the pGenie Python generator harness.
 
-The harness validates the fixture pgn project today and grows generator-facing
-tests in Wave 2. It never touches pre-existing databases; any database it
+The harness validates the fixture pgn project today. It never touches
+pre-existing databases; any database it
 creates is a uniquely named temp DB that it drops afterwards.
 """
 

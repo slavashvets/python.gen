@@ -11,7 +11,7 @@ create type point2d as (
 );
 
 -- pgn flattens domains to their base type in result columns; domain-typed query
--- parameters must be cast to the base type (pgn 0.6.2 cannot bind a domain
+-- parameters must be cast to the base type (pgn cannot bind a domain
 -- parameter directly).
 create domain display_name as text
   not null
