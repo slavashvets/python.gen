@@ -26,7 +26,7 @@ import psycopg
 import pytest
 from psycopg.conninfo import make_conninfo
 
-from tests._harness import FIXTURE_PROJECT, GOLDEN_DIR, HERE, run_pgn
+from tests._harness import FIXTURE_PROJECT, GOLDEN_DIR, HERE, ensure_droppable, run_pgn
 
 HARNESS_ROOT = HERE.parent
 
@@ -192,6 +192,7 @@ def roundtrip_db(pgn_admin_url: str) -> Iterator[str]:
                 "WHERE datname = %s AND pid <> pg_backend_pid()"
             )
             _ = admin.execute(terminate.encode(), (name,))
+            ensure_droppable(name)
             _ = admin.execute(f'DROP DATABASE IF EXISTS "{name}"'.encode())
         finally:
             admin.close()

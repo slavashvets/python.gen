@@ -17,7 +17,6 @@ from tests._harness import (
     FIXTURE_PROJECT,
     GEN_DIR,
     GOLDEN_DIR,
-    PROTECTED_DATABASES,
     HERE,
     admin_database_url,
     effective_database_name,
@@ -46,13 +45,14 @@ def pgn_bin() -> str:
 @pytest.fixture(scope="session")
 def pgn_admin_url() -> str:
     url = admin_database_url()
-    # pgn must connect to an admin DB that is not one of the app databases; the
-    # actual work happens in a temp DB pgn creates and drops itself. Resolve the
-    # name libpq would actually use (falling back to the user for a path-less URL)
-    # and require it explicitly, so a protected DB cannot slip through as the user.
+    # The admin URL conventionally points at the "postgres" maintenance DB; the
+    # harness only uses it to CREATE/DROP uniquely named temp databases, so a
+    # protected name is fine here. Destructive protection lives at the drop site
+    # (ensure_droppable). Resolve the name libpq would actually use (falling back
+    # to the user for a path-less URL) and require it to be explicit.
     name = effective_database_name(url)
-    if not name or name in PROTECTED_DATABASES:
-        pytest.fail(f"refusing to run against protected or unspecified database in {url!r}")
+    if not name:
+        pytest.fail(f"refusing to run against unspecified database in {url!r}")
     return url
 
 

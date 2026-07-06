@@ -30,6 +30,17 @@ def admin_database_url() -> str:
     return os.environ.get("PGN_TEST_DATABASE_URL", DEFAULT_ADMIN_URL)
 
 
+def ensure_droppable(name: str) -> None:
+    """Refuse to drop a protected (system/maintenance) database.
+
+    The harness only ever drops the uniquely named temp databases it created
+    itself, so this should never fire; it is a belt-and-suspenders guard at the
+    single destructive site.
+    """
+    if not name or name in PROTECTED_DATABASES:
+        raise RuntimeError(f"refusing to drop protected or unspecified database {name!r}")
+
+
 def effective_database_name(url: str) -> str:
     """The database libpq actually connects to, resolved by psycopg.
 
