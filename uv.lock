@@ -73,7 +73,7 @@ dev = [
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "basedpyright" },
+    { name = "basedpyright", specifier = "==1.39.7" },
     { name = "psycopg", extras = ["binary"], specifier = ">=3.2" },
     { name = "pytest", specifier = ">=8" },
 ]
