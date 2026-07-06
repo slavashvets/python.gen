@@ -11,8 +11,8 @@ from decimal import Decimal
 from typing import cast
 from uuid import UUID
 
-from ._runtime import JsonValue
-from ._runtime import require_array
+from ._core import JsonValue
+from ._core import require_array
 from .types.mood import Mood
 from .types.point_2_d import Point2D
 from .types.tag_value import TagValue

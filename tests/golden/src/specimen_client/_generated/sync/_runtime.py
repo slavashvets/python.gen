@@ -10,7 +10,7 @@ from typing import TypeVar
 from psycopg import Connection
 from psycopg.rows import dict_row
 
-from .._runtime import JsonValue as JsonValue, NoRowError as NoRowError
+from .._core import JsonValue as JsonValue, NoRowError as NoRowError, require_array as require_array
 
 _T = TypeVar("_T")
 _Row = Mapping[str, object]

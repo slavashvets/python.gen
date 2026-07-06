@@ -7,11 +7,15 @@
 -- deeper under `sync/statements/`, so they reach the shared modules with an
 -- extra dot). The runtime import is `.._runtime` for both surfaces (async from
 -- `statements/`, sync from `sync/statements/`), so it needs no field here.
+-- corePrefix mirrors rowsImport's depth: statement modules import JsonValue from
+-- `_core` directly, so sync reaches it with an extra dot (`..._core`) exactly
+-- like it reaches `_rows` (`..._rows`).
 let Surface =
       { defKeyword : Text
       , connType : Text
       , awaitKw : Text
       , rowsImport : Text
+      , corePrefix : Text
       , typesPrefix : Text
       }
 
@@ -21,6 +25,7 @@ let async
       , connType = "AsyncConnection"
       , awaitKw = "await "
       , rowsImport = ".._rows"
+      , corePrefix = ".._core"
       , typesPrefix = "..types"
       }
 
@@ -30,6 +35,7 @@ let sync
       , connType = "Connection"
       , awaitKw = ""
       , rowsImport = "..._rows"
+      , corePrefix = "..._core"
       , typesPrefix = "...types"
       }
 

@@ -2,7 +2,7 @@
 # SPDX-FileCopyrightText: 2026 Viacheslav Shvets
 # SPDX-License-Identifier: MIT-0
 
-from ._generated._runtime import JsonValue as JsonValue, NoRowError as NoRowError
+from ._generated._core import JsonValue as JsonValue, NoRowError as NoRowError
 
 from ._generated.types.mood import Mood as Mood
 from ._generated.types.point_2_d import Point2D as Point2D

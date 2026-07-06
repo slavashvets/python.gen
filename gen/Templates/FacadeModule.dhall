@@ -42,16 +42,15 @@ let rowNames
           )
           statements
 
--- The runtime names that are part of the public surface: the JsonValue alias used
+-- The core names that are part of the public surface: the JsonValue alias used
 -- by callers typing jsonb columns, and the NoRowError raised by single-row
--- statements. _runtime.py is always emitted, so these are always re-exported (the
--- sync runtime re-exports the same two one level up).
+-- statements. _core.py is always emitted, so these are always re-exported.
 let runtimeNames = [ "JsonValue", "NoRowError" ]
 
 let run =
       \(params : Params) ->
         let runtimeBlock =
-              "from ${params.generatedPrefix}._runtime import "
+              "from ${params.generatedPrefix}._core import "
               ++  Prelude.Text.concatMapSep
                     ", "
                     Text

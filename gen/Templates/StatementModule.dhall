@@ -54,14 +54,20 @@ let datetimeImport
             then  [ "from datetime import " ++ Prelude.Text.concatSep ", " names ]
             else  [] : List Text
 
+-- The I/O helper (fetch_*/execute_*) always comes from _runtime; JsonValue, when
+-- used, comes from _core via the surface's corePrefix (statement modules import
+-- the shared name directly, not through the _runtime re-export).
 let runtimeImport
-    : Bool -> Text -> Text
-    = \(jsonValue : Bool) ->
-      \(helperName : Text) ->
-        let members =
-              if jsonValue then "JsonValue, " ++ helperName else helperName
+    : Text -> Text
+    = \(helperName : Text) -> "from .._runtime import " ++ helperName
 
-        in  "from .._runtime import " ++ members
+let coreImport
+    : Text -> Bool -> List Text
+    = \(corePrefix : Text) ->
+      \(jsonValue : Bool) ->
+        if    jsonValue
+        then  [ "from ${corePrefix} import JsonValue" ]
+        else  [] : List Text
 
 let customImportLines
     : Text -> ImportSet.Type -> List Text
@@ -107,8 +113,9 @@ let renderImports
                     "from psycopg.types.json import Jsonb"
 
         let localBlock =
-                  rowsImportLine params
-                # [ runtimeImport imports.jsonValue params.helperName ]
+                  coreImport params.surface.corePrefix imports.jsonValue
+                # rowsImportLine params
+                # [ runtimeImport params.helperName ]
                 # customImportLines params.surface.typesPrefix imports
 
         let groups =

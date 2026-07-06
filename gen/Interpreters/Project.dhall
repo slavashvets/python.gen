@@ -18,6 +18,8 @@ let QueryGen = ./Query.dhall
 
 let CustomTypeGen = ./CustomType.dhall
 
+let CoreModule = ../Templates/CoreModule.dhall
+
 let RuntimeModule = ../Templates/RuntimeModule.dhall
 
 let InitModule = ../Templates/InitModule.dhall
@@ -227,6 +229,11 @@ let combineOutputs =
                     }
               }
 
+        -- Surface-agnostic; performs no I/O, so exactly one copy is emitted
+        -- regardless of surface. Both _runtime.py modules re-export from it.
+        let coreModule =
+              { path = srcPrefix ++ "_core.py", content = CoreModule.run {=} }
+
         let runtimeModule =
               { path = srcPrefix ++ "_runtime.py", content = RuntimeModule.run {=} }
 
@@ -390,7 +397,7 @@ let combineOutputs =
               else  [] : List Lude.File.Type
 
         let asyncStaticFiles =
-              [ asyncFacade, topInit, runtimeModule, statementsInit ]
+              [ asyncFacade, topInit, coreModule, runtimeModule, statementsInit ]
 
         let allFiles =
                 asyncStaticFiles

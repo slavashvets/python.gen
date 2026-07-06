@@ -1,5 +1,12 @@
 # Upcoming
 
+- Emitted packages gained a surface-agnostic `_generated/_core.py` that owns the
+  shared names (the `JsonValue` alias, `NoRowError`, a new `DecodeError`, and the
+  `require_array` decode guard) with no I/O. Both `_runtime.py` modules are now
+  I/O-only and re-export `JsonValue`/`NoRowError`/`require_array` from `_core` so
+  off-contract `from ._runtime import ...` keeps working; `_rows.py`, the
+  statement modules, and the facades import the shared names from `_core`
+  directly.
 - The release wheel now ships its GPL compliance files inside the artifact:
   the build fetches the GPLv3 text into `COPYING` (sha256-pinned) and bundles
   the committed `wheel/NOTICE` describing the composition; both land in

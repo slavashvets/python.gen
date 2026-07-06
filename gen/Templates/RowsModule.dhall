@@ -70,8 +70,8 @@ let renderImports
                 # importLineIf imports.uuid "from uuid import UUID"
 
         let localBlock =
-                  importLineIf imports.jsonValue "from ._runtime import JsonValue"
-                # importLineIf imports.enumArray "from ._runtime import require_array"
+                  importLineIf imports.jsonValue "from ._core import JsonValue"
+                # importLineIf imports.enumArray "from ._core import require_array"
                 # customImportLines imports
 
         let groups =

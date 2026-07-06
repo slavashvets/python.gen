@@ -12,8 +12,9 @@ from psycopg import Connection
 from psycopg.types.json import Json
 from psycopg.types.json import Jsonb
 
+from ..._core import JsonValue
 from ..._rows import InsertSpecimenRow, decode_insert_specimen
-from .._runtime import JsonValue, fetch_single
+from .._runtime import fetch_single
 from ...types.mood import Mood
 from ...types.point_2_d import Point2D
 

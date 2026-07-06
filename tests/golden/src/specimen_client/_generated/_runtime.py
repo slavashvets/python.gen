@@ -5,36 +5,16 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
-from typing import TypeVar, cast
+from typing import TypeVar
 
 from psycopg import AsyncConnection
 from psycopg.rows import dict_row
 
+from ._core import JsonValue as JsonValue, NoRowError as NoRowError, require_array as require_array
+
 _T = TypeVar("_T")
 _Row = Mapping[str, object]
 _Params = Mapping[str, object]
-
-type JsonValue = None | bool | int | float | str | list["JsonValue"] | dict[str, "JsonValue"]
-
-
-class NoRowError(RuntimeError):
-    """A single-row query returned no rows."""
-
-
-def require_array(value: object) -> list[object]:
-    """Guard an enum-array column decode.
-
-    psycopg returns an enum array as a Python list only when the enum type is
-    registered on the connection (register_types); without it the value comes
-    back as the raw array text, which would iterate into bogus members. Fail
-    clearly instead.
-    """
-    if isinstance(value, list):
-        return cast(list[object], value)
-    raise RuntimeError(
-        "enum array decoded as text; call register_types() on the connection "
-        "before decoding enum-array columns"
-    )
 
 
 async def fetch_optional(
