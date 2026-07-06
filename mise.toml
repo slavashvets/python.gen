@@ -13,3 +13,36 @@ run = "uv sync"
 description = "Run the generator harness tests"
 depends = ["install"]
 run = "uv run pytest tests -q"
+
+# Regenerates only the "python" artifact: a full 7-artifact generate peaks at
+# ~31 GB RSS (memory goes to normalizing the generator closure per artifact,
+# see ci.yml), a single-artifact one at ~10 GB. The temp copy guarantees a
+# fresh resolve of the working-tree gen/ (no stale freeze) and keeps pgn's
+# scratch files out of the repo.
+[tasks.golden]
+description = "Refresh tests/golden from the working-tree gen/ (single-artifact run)"
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+root="$(pwd)"
+tmp="$(mktemp -d)"
+trap 'rm -rf "$tmp"' EXIT
+cp -R "$root/tests/fixture-project/." "$tmp/fixture"
+rm -f "$tmp/fixture/freeze1.pgn.yaml"
+rm -rf "$tmp/fixture/artifacts"
+python3 - "$tmp/fixture/project1.pgn.yaml" "$root/gen/Gen.dhall" <<'EOF'
+import sys
+from pathlib import Path
+
+p = Path(sys.argv[1])
+head, sep, _ = p.read_text().partition("  # The variants below")
+assert sep, "variants marker not found in project1.pgn.yaml"
+_ = p.write_text(head.rstrip().replace("../../gen/Gen.dhall", sys.argv[2]) + "\n")
+EOF
+cd "$tmp/fixture"
+pgn --database-url "${PGN_TEST_DATABASE_URL:-postgresql://postgres:postgres@localhost:5432/postgres?sslmode=disable}" generate
+rsync -a --delete artifacts/python/src/specimen_client/_generated/ "$root/tests/golden/src/specimen_client/_generated/"
+cp artifacts/python/src/specimen_client/__init__.py "$root/tests/golden/src/specimen_client/__init__.py"
+cp artifacts/python/src/specimen_client/sync/__init__.py "$root/tests/golden/src/specimen_client/sync/__init__.py"
+echo "golden refreshed; review with: git diff tests/golden"
+'''

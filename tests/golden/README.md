@@ -21,23 +21,13 @@ resulting diff before committing. Refresh the `_generated/` subtree and the
 facade; never overwrite the hand-written `pyproject.toml` or `py.typed`.
 
 ```bash
-cd tests/fixture-project
-rm -f freeze1.pgn.yaml                 # force pgn to re-resolve the working-tree gen/
-rm -rf artifacts
-# Default admin URL is localhost:5432; set PGN_TEST_DATABASE_URL to point elsewhere
-# (e.g. a local pg0 instance on a non-default port).
-mise x -- pgn --database-url "${PGN_TEST_DATABASE_URL:-postgresql://postgres:postgres@localhost:5432/postgres?sslmode=disable}" generate
-rsync -a --delete \
-  artifacts/python/src/specimen_client/_generated/ \
-  ../golden/src/specimen_client/_generated/
-cp artifacts/python/src/specimen_client/__init__.py ../golden/src/specimen_client/__init__.py
-# The sync facade lives outside _generated, like the async facade.
-mkdir -p ../golden/src/specimen_client/sync
-cp artifacts/python/src/specimen_client/sync/__init__.py ../golden/src/specimen_client/sync/__init__.py
+# Default admin URL is localhost:5432; set PGN_TEST_DATABASE_URL to point
+# elsewhere (e.g. a local pg0 instance on a non-default port).
+mise run golden
 ```
 
-`artifacts/` is gitignored; the golden tree is the committed contract.
-
-> Note: a stale `freeze1.pgn.yaml` makes pgn reuse a cached generator and ignore
-> edits under `gen/`, silently emitting old output. Always remove it before
-> a golden refresh. The harness deletes it in its temp copy for the same reason.
+The task (see `mise.toml`) copies the fixture project to a temp dir, cuts it
+down to the `python` artifact (a full 7-artifact generate peaks at ~31 GB RSS,
+a single-artifact one at ~10 GB), regenerates from the working-tree `gen/`
+with a fresh resolve (no stale `freeze1.pgn.yaml`), and rsyncs the
+`_generated/` subtree plus both facades back into the golden tree.
