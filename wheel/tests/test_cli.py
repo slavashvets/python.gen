@@ -21,7 +21,6 @@ from pathlib import Path
 import pytest
 
 _WHEEL_DIR = Path(__file__).resolve().parents[1]
-_REPO_ROOT = _WHEEL_DIR.parent
 _DUMMY_BYTES = b"DUMMY-RESOLVED-DHALL-BYTES\n"
 _VERSION = "1.2.3"
 _RELEASE_URL = f"https://github.com/example/python-gen/releases/download/v{_VERSION}/resolved.dhall"
@@ -43,7 +42,10 @@ def cli(tmp_path_factory: pytest.TempPathFactory) -> Path:
     shutil.copytree(_WHEEL_DIR, staged, ignore=shutil.ignore_patterns("dist", "__pycache__"))
     (staged / "src" / "pgenie_python_gen" / "resolved.dhall").write_bytes(_DUMMY_BYTES)
     (staged / "src" / "pgenie_python_gen" / "_meta.py").write_text(_META)
-    shutil.copyfile(_REPO_ROOT / "LICENSE", staged / "LICENSE")
+    # Release staging fetches the real GPLv3 text into COPYING (the artifact
+    # is GPL because of the inlined gen-sdk; the repo carries no GPL text).
+    # A stub keeps the no-network property while exercising the same layout.
+    _ = (staged / "COPYING").write_text("GNU GENERAL PUBLIC LICENSE stub for tests\n")
 
     dist = work / "dist"
     subprocess.run([_UV, "build", "--sdist", "--wheel", "--out-dir", str(dist), str(staged)], check=True)

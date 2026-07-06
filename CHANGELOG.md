@@ -1,5 +1,11 @@
 # Upcoming
 
+- The release wheel now ships its GPL compliance files inside the artifact:
+  the build fetches the GPLv3 text into `COPYING` (sha256-pinned) and bundles
+  the committed `wheel/NOTICE` describing the composition; both land in
+  `dist-info/licenses` and the release job asserts their presence in the
+  wheel and the sdist. The repository LICENSE (MIT) is no longer copied into
+  the wheel, where it misstated the artifact's license.
 - Emitted files now carry REUSE-style SPDX header lines
   (`SPDX-FileCopyrightText`, `SPDX-License-Identifier: MIT-0`) right after
   the `@generated` marker: license scanners in consuming projects see a

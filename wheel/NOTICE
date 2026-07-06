@@ -1,0 +1,17 @@
+pgenie-python-gen: the python.gen generator frozen as resolved.dhall and
+shipped as an installable wheel.
+
+The artifact as a whole is distributed under GPL-3.0-or-later (see COPYING)
+because resolved.dhall inlines the gen-sdk Dhall contract. Components:
+
+- gen-sdk (https://github.com/pgenie-io/gen-sdk): GPL-3.0-or-later,
+  Copyright (C) Nikita Volkov
+- lude.dhall (https://github.com/codemine-io/lude.dhall): MIT
+- Dhall Prelude (https://github.com/dhall-lang/dhall-lang): BSD-3-Clause
+- python.gen itself (https://github.com/slavashvets/python.gen): MIT,
+  Copyright (C) 2026 Viacheslav Shvets
+
+Code that this generator emits into your project is not covered by the GPL:
+emitted files carry an SPDX-License-Identifier: MIT-0 header and may be used
+under the containing project's own terms. See the python.gen README,
+section License.

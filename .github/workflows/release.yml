@@ -187,7 +187,14 @@ jobs:
           EOF
 
           cp release-asset/resolved.dhall wheel/src/pgenie_python_gen/resolved.dhall
-          cp LICENSE wheel/LICENSE
+
+          # The artifact ships under GPL-3.0-or-later (wheel/NOTICE explains
+          # the composition), so the GPLv3 text must travel inside it. The
+          # repository itself is MIT and deliberately carries no GPL text,
+          # hence the pinned fetch at build time. The repo LICENSE (MIT) is
+          # NOT copied in: it would misstate the artifact's license.
+          curl -fsSL https://www.gnu.org/licenses/gpl-3.0.txt -o wheel/COPYING
+          echo "3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986  wheel/COPYING" | sha256sum -c -
 
       - name: Byte-assert the staged generator matches the released asset
         shell: bash
@@ -217,6 +224,19 @@ jobs:
             echo "::error::resolved.dhall missing from the sdist ($sdist_file)."
             exit 1
           fi
+
+          # GPL compliance: the license text and the composition notice must
+          # ship inside the artifact (dist-info/licenses in the wheel).
+          for f in COPYING NOTICE; do
+            if ! unzip -l "$wheel_file" | grep -q "licenses/$f"; then
+              echo "::error::$f missing from the wheel ($wheel_file)."
+              exit 1
+            fi
+            if ! tar tzf "$sdist_file" | grep -q "/$f"; then
+              echo "::error::$f missing from the sdist ($sdist_file)."
+              exit 1
+            fi
+          done
 
       - name: Install into a clean venv and verify the CLI
         shell: bash
