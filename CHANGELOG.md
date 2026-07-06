@@ -1,5 +1,10 @@
 # Upcoming
 
+- Emitted files now carry REUSE-style SPDX header lines
+  (`SPDX-FileCopyrightText`, `SPDX-License-Identifier: MIT-0`) right after
+  the `@generated` marker: license scanners in consuming projects see a
+  standard permissive id for the generated code instead of guessing its
+  provenance.
 - Added a `pgenie-python-gen` wheel channel (`wheel/`): the release build bundles
   the resolved generator as an installable package with a `path`/`url`/`vendor`
   CLI; publication to PyPI ships wired but disabled.
