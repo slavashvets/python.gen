@@ -8,7 +8,7 @@ let Lude = Deps.Lude
 
 let Prelude = Deps.Prelude
 
-let Model = Deps.Project
+let Model = Deps.Sdk.Project
 
 let Scalar = ./Scalar.dhall
 

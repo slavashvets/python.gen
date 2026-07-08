@@ -14,7 +14,7 @@ let Lude = Deps.Lude
 
 let Compiled = Lude.Compiled
 
-let Model = Deps.Project
+let Model = Deps.Sdk.Project
 
 let Input = Model.Result
 

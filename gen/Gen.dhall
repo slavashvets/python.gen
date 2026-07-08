@@ -1,3 +1,3 @@
 let Sdk = ./Deps/Sdk.dhall
 
-in  Sdk ./Config.dhall ./compile.dhall
+in  Sdk.module ./Config.dhall ./compile.dhall

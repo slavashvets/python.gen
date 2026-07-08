@@ -6,7 +6,7 @@ let Lude = Deps.Lude
 
 let Prelude = Deps.Prelude
 
-let Model = Deps.Project
+let Model = Deps.Sdk.Project
 
 let CustomKind = ../Structures/CustomKind.dhall
 

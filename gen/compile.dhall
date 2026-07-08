@@ -1,6 +1,6 @@
 let Deps = ./Deps/package.dhall
 
-let Model = Deps.Project
+let Model = Deps.Sdk.Project
 
 let Prelude = Deps.Prelude
 
