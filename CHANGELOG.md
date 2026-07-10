@@ -1,5 +1,11 @@
 # Upcoming
 
+- The test harness now runs every pgn subprocess in its own process group under
+  an RSS watchdog: a thread polls `ps -o rss=` every 2 s and, on breach of
+  `PGN_MAX_RSS_GB` (default 40 GB), kills the whole group and fails the test with
+  the observed RSS. A single-artifact generate peaks ~35 GB on the reference
+  machine; an unbounded run once hit ~80 GB and had to be emergency-killed, so
+  the budget keeps a runaway generate from taking down the host.
 - Emitted packages gained a surface-agnostic `_generated/_core.py` that owns the
   shared names (the `JsonValue` alias, `NoRowError`, a new `DecodeError`, and the
   `require_array` decode guard) with no I/O. Both `_runtime.py` modules are now

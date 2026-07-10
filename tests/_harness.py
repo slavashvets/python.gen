@@ -8,11 +8,19 @@ conftest.
 from __future__ import annotations
 
 import os
+import signal
 import subprocess
+import threading
 from pathlib import Path
 
 import psycopg
 from psycopg.conninfo import conninfo_to_dict
+
+# RSS budget for a pgn subprocess, in GB. A single-artifact generate peaks
+# ~35 GB RSS on this 48 GB machine, and an unbounded run once climbed to ~80 GB
+# RSS+swap and had to be emergency-killed. The default leaves headroom over the
+# measured ~35 GB; override with PGN_MAX_RSS_GB (a float number of GB).
+DEFAULT_MAX_RSS_GB = 40.0
 
 HERE = Path(__file__).resolve().parent
 GEN_DIR = HERE.parent / "gen"
@@ -67,11 +75,67 @@ def effective_database_name(url: str) -> str:
     )
 
 
+def _rss_gb(pid: int) -> float | None:
+    """RSS of pid in GB via `ps -o rss= -p <pid>` (kilobytes on macOS).
+
+    Returns None if the process is already gone (ps prints nothing / non-zero).
+    """
+    out = subprocess.run(["ps", "-o", "rss=", "-p", str(pid)], capture_output=True, text=True)
+    value = out.stdout.strip()
+    if out.returncode != 0 or not value:
+        return None
+    return int(value) / (1024 * 1024)  # KB -> GB
+
+
 def run_pgn(pgn_bin: str, admin_url: str, project_dir: Path, *args: str) -> subprocess.CompletedProcess[str]:
-    """Run pgn with the global --database-url flag, cwd = the project directory."""
-    return subprocess.run(
+    """Run pgn with the global --database-url flag, cwd = the project directory.
+
+    pgn's per-artifact closure normalization is memory-hungry, so a runaway
+    generate can exhaust the host. pgn runs in its own process group and a
+    watchdog thread polls its RSS every 2 s; on breach of PGN_MAX_RSS_GB
+    (default DEFAULT_MAX_RSS_GB) it kills the whole group and this raises, so
+    the offending test fails instead of the machine going down.
+    """
+    budget_gb = float(os.environ.get("PGN_MAX_RSS_GB", DEFAULT_MAX_RSS_GB))
+    proc = subprocess.Popen(
         [pgn_bin, "--database-url", admin_url, *args],
         cwd=project_dir,
-        capture_output=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
         text=True,
+        start_new_session=True,  # own process group so we can kill the whole tree
     )
+
+    done = threading.Event()
+    state: dict[str, object] = {"peak_gb": 0.0, "killed": False}
+
+    def watchdog() -> None:
+        while True:
+            rss = _rss_gb(proc.pid)
+            if rss is not None:
+                state["peak_gb"] = max(float(state["peak_gb"]), rss)  # type: ignore[arg-type]
+                if rss > budget_gb:
+                    state["killed"] = True
+                    try:
+                        os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+                    except (ProcessLookupError, PermissionError):
+                        pass
+                    return
+            if done.wait(2.0):  # normal exit signalled, or poll interval elapsed
+                return
+
+    thread = threading.Thread(target=watchdog, daemon=True)
+    thread.start()
+    try:
+        stdout, stderr = proc.communicate()
+    finally:
+        done.set()
+        thread.join()
+
+    if state["killed"]:
+        raise RuntimeError(
+            f"pgn watchdog killed the process group: RSS {float(state['peak_gb']):.1f} GB "
+            f"exceeded the PGN_MAX_RSS_GB={budget_gb:.1f} GB budget"
+        )
+
+    return subprocess.CompletedProcess(proc.args, proc.returncode, stdout, stderr)
