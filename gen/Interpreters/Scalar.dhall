@@ -6,7 +6,7 @@ let Algebra = ../Algebras/Interpreter.dhall
 
 let Lude = Deps.Lude
 
-let Model = Deps.Project
+let Model = Deps.Sdk.Project
 
 let Primitive = ./Primitive.dhall
 

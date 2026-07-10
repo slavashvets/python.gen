@@ -11,7 +11,7 @@ from .._runtime import fetch_many
 from ..types.mood import Mood
 
 SQL = """\
--- many: enum array parameter via = any(%(moods)s::mood[]); returns the enum array column.
+-- many: enum array parameter via = any($moods::mood[]); returns the enum array column.
 SELECT
   id, pub_id, feeling, moods, title
 FROM specimen

@@ -12,7 +12,7 @@ from .._rows import ListSpecimensByIdsRow, decode_list_specimens_by_ids
 from .._runtime import fetch_many
 
 SQL = """\
--- many: array parameter via = any(%(pub_ids)s).
+-- many: array parameter via = any($pub_ids).
 SELECT
   id, pub_id, feeling, title
 FROM specimen

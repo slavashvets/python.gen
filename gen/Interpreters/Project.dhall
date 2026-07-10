@@ -6,7 +6,7 @@ let Lude = Deps.Lude
 
 let Prelude = Deps.Prelude
 
-let Model = Deps.Project
+let Model = Deps.Sdk.Project
 
 let CustomKind = ../Structures/CustomKind.dhall
 
@@ -81,10 +81,12 @@ let memberPyType =
       \(member : Model.Member) ->
         let valuePyType =
               merge
-                { Ok = \(out : Value.Output) -> out.pyType
-                , Err = \(_ : { path : List Text, message : Text }) -> "object"
+                { Ok =
+                    \(wrapped : { value : Value.Output, warnings : List Report }) ->
+                      wrapped.value.pyType
+                , Err = \(_ : Report) -> "object"
                 }
-                (Value.run lookupConfig member.value).result
+                (Value.run lookupConfig member.value)
 
         in  valuePyType ++ (if member.isNullable then " | None" else "")
 
@@ -436,8 +438,12 @@ let run =
             : Model.CustomType -> Bool
             = \(ct : Model.CustomType) ->
                 merge
-                  { Ok = \(_ : CustomTypeGen.Output) -> True, Err = \(_ : Report) -> False }
-                  (CustomTypeGen.run config ct).result
+                  { Ok =
+                      \(_ : { value : CustomTypeGen.Output, warnings : List Report }) ->
+                        True
+                  , Err = \(_ : Report) -> False
+                  }
+                  (CustomTypeGen.run config ct)
 
         -- Nested under the type's own name so the warning names the type
         -- that failed, not just the inner member/column that triggered it
@@ -446,11 +452,13 @@ let run =
             : Model.CustomType -> Optional Report
             = \(ct : Model.CustomType) ->
                 merge
-                  { Ok = \(_ : CustomTypeGen.Output) -> None Report
+                  { Ok =
+                      \(_ : { value : CustomTypeGen.Output, warnings : List Report }) ->
+                        None Report
                   , Err =
                       \(err : Report) -> Some { path = [ ct.name.inSnakeCase ] # err.path, message = err.message }
                   }
-                  (CustomTypeGen.run config ct).result
+                  (CustomTypeGen.run config ct)
 
         -- A skipped custom type resolves to Absent for any query that
         -- references it, and that query's own Member/ParamsMember
@@ -482,10 +490,12 @@ let run =
                 QueryCheck
                 ( \(query : Model.Query) ->
                     merge
-                      { Ok = \(_ : QueryGen.Output) -> { query, keep = True, warning = None Report }
+                      { Ok =
+                          \(_ : { value : QueryGen.Output, warnings : List Report }) ->
+                            { query, keep = True, warning = None Report }
                       , Err = \(err : Report) -> { query, keep = False, warning = Some err }
                       }
-                      (QueryGen.run config lookup query).result
+                      (QueryGen.run config lookup query)
                 )
                 input.queries
 
@@ -530,6 +540,6 @@ let run =
                 queriesForCombine
                 typesForCombine
 
-        in  combined // { warnings = combined.warnings # skipWarnings }
+        in  Lude.Compiled.appendWarnings Output skipWarnings combined
 
 in  Algebra.module Input Output run

@@ -156,14 +156,12 @@ def test_skip_unsupported_drops_offending_units_and_cascades(
     result = run_pgn(pgn_bin, pgn_admin_url, project, "generate")
     assert result.returncode == 0, f"Skip mode must still succeed:\n{result.stdout}\n{result.stderr}"
 
-    # pgn 0.6.5 does not surface the generator's Compiled.warnings anywhere --
-    # not stdout, not stderr, no written warnings file -- for this Files-based
-    # generator contract; this is an observed fact about pgn, not something
-    # the generator controls, so this pins it rather than asserting the
-    # warning text is visible.
+    # Since 0.7.2 pgn surfaces the generator's Compiled.warnings during
+    # generate (pgenie-io/pgenie#67), so every skipped unit must be visible in
+    # the combined output.
     combined = (result.stdout + result.stderr).lower()
     for marker in ("unsupported type", "json/jsonb array", "custom type not found"):
-        assert marker not in combined, f"expected pgn to swallow the warning silently, found {marker!r} in output"
+        assert marker in combined, f"expected pgn to surface the warning, {marker!r} missing from output"
 
     generated = project / "artifacts" / "python"
     package_src = generated / "src" / "fixture"

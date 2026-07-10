@@ -11,7 +11,7 @@ from .._runtime import fetch_many
 from ..types.mood import Mood
 
 SQL = """\
--- many: select with order by. Enum parameter (%(feeling)s).
+-- many: select with order by. Enum parameter ($feeling).
 SELECT
   id, pub_id, feeling, title, label, rev, origin, tags, meta
 FROM specimen

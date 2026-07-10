@@ -1,6 +1,6 @@
 let Deps = ../Deps/package.dhall
 
-let Model = Deps.Project
+let Model = Deps.Sdk.Project
 
 -- A composite field as the decode/encode sites need it: the Python attribute
 -- name and the rendered Python type (already nullability-applied). Threaded so

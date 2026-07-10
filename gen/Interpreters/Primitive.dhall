@@ -4,7 +4,7 @@ let ImportSet = ../Structures/ImportSet.dhall
 
 let Algebra = ../Algebras/Interpreter.dhall
 
-let Model = Deps.Project
+let Model = Deps.Sdk.Project
 
 let Input = Model.Primitive
 
