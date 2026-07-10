@@ -14,6 +14,14 @@ description = "Run the generator harness tests"
 depends = ["install"]
 run = "uv run pytest tests -q"
 
+# Cold-cache generate benchmark: current gen (`as Source` Deps) vs the same
+# tree with pre-as-Source Deps, same pgn binary, fresh dhall cache per run.
+# Needs a reachable Postgres (PGN_TEST_DATABASE_URL). See bench/as-source.sh
+# for the PGN_BEFORE_BIN override that runs the before variant on pgn 0.8.0.
+[tasks."bench:as-source"]
+description = "Benchmark cold `pgn generate` with vs without `as Source` Deps"
+run = "bench/as-source.sh"
+
 # Regenerates only the "python" artifact: a full 7-artifact generate peaks at
 # ~31 GB RSS (memory goes to normalizing the generator closure per artifact,
 # see ci.yml), a single-artifact one at ~10 GB. The temp copy guarantees a
