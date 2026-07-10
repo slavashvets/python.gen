@@ -20,7 +20,7 @@ from ..types.point_2_d import Point2D
 
 SQL = """\
 -- single row: insert ... returning the full type surface.
--- jsonb param (%(doc_jsonb)s), enum param (%(feeling)s), composite param (%(origin)s).
+-- jsonb param ($doc_jsonb), enum param ($feeling), composite param ($origin).
 -- The domain columns (label, rev, meta) get literal/default values rather than
 -- parameters. pgn cannot bind a parameter to a checked domain column: a
 -- raw domain param is rejected, and a base-type-cast param fails the domain
@@ -61,9 +61,6 @@ _SQL = SQL.encode()
 async def insert_specimen(
     conn: AsyncConnection[object],
     *,
-    doc_jsonb: JsonValue,
-    feeling: Mood,
-    origin: Point2D | None,
     flag: bool,
     small: int,
     medium: int,
@@ -77,6 +74,7 @@ async def insert_specimen(
     amount: Decimal,
     blob: bytes,
     doc_json: JsonValue,
+    doc_jsonb: JsonValue,
     maybe_text: str | None,
     maybe_int: int | None,
     maybe_uuid: UUID | None,
@@ -85,12 +83,11 @@ async def insert_specimen(
     tags: list[str | None],
     related_ids: list[UUID | None] | None,
     grid: list[int | None] | None,
+    feeling: Mood,
     moods: list[Mood | None] | None,
+    origin: Point2D | None,
 ) -> InsertSpecimenRow:
     params: dict[str, object] = {
-        "doc_jsonb": Jsonb(doc_jsonb),
-        "feeling": feeling,
-        "origin": None if origin is None else (origin.x, origin.y),
         "flag": flag,
         "small": small,
         "medium": medium,
@@ -104,6 +101,7 @@ async def insert_specimen(
         "amount": amount,
         "blob": blob,
         "doc_json": Json(doc_json),
+        "doc_jsonb": Jsonb(doc_jsonb),
         "maybe_text": maybe_text,
         "maybe_int": maybe_int,
         "maybe_uuid": maybe_uuid,
@@ -112,6 +110,8 @@ async def insert_specimen(
         "tags": tags,
         "related_ids": related_ids,
         "grid": grid,
+        "feeling": feeling,
         "moods": moods,
+        "origin": None if origin is None else (origin.x, origin.y),
     }
     return await fetch_single(conn, _SQL, params, decode_insert_specimen)

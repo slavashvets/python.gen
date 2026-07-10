@@ -77,8 +77,8 @@ jobs:
           set -euo pipefail
 
           version="$(mise x -- pgn --version)"
-          if [[ "$version" != "0.6.5" ]]; then
-            echo "::error::Expected pgn 0.6.5 (mise.toml pin), got '$version'."
+          if [[ "$version" != "0.9.1" ]]; then
+            echo "::error::Expected pgn 0.9.1 (mise.toml pin), got '$version'."
             exit 1
           fi
 

@@ -1,14 +1,5 @@
 idempotent: false
 parameters:
-  doc_jsonb:
-    type: jsonb
-    not_null: true
-  feeling:
-    type: mood
-    not_null: true
-  origin:
-    type: point_2_d
-    not_null: false
   flag:
     type: bool
     not_null: true
@@ -48,6 +39,9 @@ parameters:
   doc_json:
     type: json
     not_null: true
+  doc_jsonb:
+    type: jsonb
+    not_null: true
   maybe_text:
     type: text
     not_null: false
@@ -78,11 +72,17 @@ parameters:
     not_null: false
     dims: 1
     element_not_null: false
+  feeling:
+    type: mood
+    not_null: true
   moods:
     type: mood
     not_null: false
     dims: 1
     element_not_null: false
+  origin:
+    type: point_2_d
+    not_null: false
 result:
   cardinality: one
   columns:
