@@ -22,6 +22,16 @@ run = "uv run pytest tests -q"
 description = "Benchmark cold `pgn generate` with vs without `as Source` Deps"
 run = "bench/as-source.sh"
 
+# One-command builds of the fixture client for eyeballing the two variants;
+# output goes to ./demo-with-as-source / ./demo-without-as-source.
+[tasks."generate:as-source"]
+description = "Build the fixture client with the committed `as Source` Deps"
+run = "bench/generate.sh with"
+
+[tasks."generate:no-as-source"]
+description = "Build the fixture client with the pre-as-Source Deps"
+run = "bench/generate.sh without"
+
 # Regenerates only the "python" artifact: a full 7-artifact generate peaks at
 # ~31 GB RSS (memory goes to normalizing the generator closure per artifact,
 # see ci.yml), a single-artifact one at ~10 GB. The temp copy guarantees a

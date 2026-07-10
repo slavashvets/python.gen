@@ -35,3 +35,7 @@ tests/fixture-project/freeze1.pgn.yaml
 # regression to an unanchored `public/` rule cannot silently drop these sigs.
 !tests/fixture-project/types/public/
 !tests/fixture-project/types/public/*.sig1.pgn.yaml
+
+# one-command variant builds (mise run generate:as-source / generate:no-as-source)
+/demo-with-as-source/
+/demo-without-as-source/
