@@ -1,5 +1,17 @@
 # Upcoming
 
+- Migrated the generator's internal dependencies to `gen-contract` v4.0.1
+  and `gen-sdk` v2.0.0, adopting `Sdk.Sigs` in place of the local
+  `Algebras/` module, and restructured the repository layout to match the
+  pGenie generator architecture: implementation moved from `gen/` to
+  `src/`, the public entry point renamed from `gen/Gen.dhall` to
+  `src/package.dhall`, and the fixture driver moved from
+  `tests/Exhaustive.dhall` to `demos/Exhaustive.dhall`. No change to
+  generated output or the public Dhall interface (`artifacts.<name>.gen`
+  URLs pointing at a previously-released `resolved.dhall` are unaffected;
+  only the next release's URL path changes, from `.../gen/Gen.dhall` — the
+  unresolved source path some projects may reference directly instead of a
+  frozen release — to `.../src/package.dhall`).
 - The test harness now runs every pgn subprocess in its own process group under
   an RSS watchdog: a thread polls `ps -o rss=` every 2 s and, on breach of
   `PGN_MAX_RSS_GB` (default 40 GB), kills the whole group and fails the test with
