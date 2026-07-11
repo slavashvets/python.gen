@@ -23,7 +23,7 @@ from psycopg.conninfo import conninfo_to_dict
 DEFAULT_MAX_RSS_GB = 40.0
 
 HERE = Path(__file__).resolve().parent
-GEN_DIR = HERE.parent / "gen"
+SRC_DIR = HERE.parent / "src"
 FIXTURE_PROJECT = HERE / "fixture-project"
 GOLDEN_DIR = HERE / "golden"
 

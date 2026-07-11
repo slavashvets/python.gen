@@ -15,9 +15,9 @@ import pytest
 
 from tests._harness import (
     FIXTURE_PROJECT,
-    GEN_DIR,
     GOLDEN_DIR,
     HERE,
+    SRC_DIR,
     admin_database_url,
     effective_database_name,
     run_pgn,
@@ -67,15 +67,15 @@ def fixture_copy(tmp_path: Path) -> Path:
 def generated_tree(pgn_bin: str, pgn_admin_url: str, tmp_path_factory: pytest.TempPathFactory) -> Path:
     """Generate the fixture client once and return its artifacts/python dir.
 
-    The generator path in project1.pgn.yaml is `../../gen/Gen.dhall`,
+    The generator path in project1.pgn.yaml is `../../src/package.dhall`,
     relative to the fixture project. To keep it resolvable the copy mirrors the
-    real layout: `<tmp>/gen` and `<tmp>/tests/fixture-project`. The freeze
+    real layout: `<tmp>/src` and `<tmp>/tests/fixture-project`. The freeze
     file is dropped so pgn re-resolves the working-tree generator instead of a
-    cached hash (a stale freeze makes pgn ignore gen/ edits and silently
+    cached hash (a stale freeze makes pgn ignore src/ edits and silently
     emit the old output).
     """
     root = tmp_path_factory.mktemp("pygen")
-    _ = shutil.copytree(GEN_DIR, root / "gen")
+    _ = shutil.copytree(SRC_DIR, root / "src")
     project = shutil.copytree(FIXTURE_PROJECT, root / "tests" / "fixture-project")
     (project / "freeze1.pgn.yaml").unlink(missing_ok=True)
     shutil.rmtree(project / "artifacts", ignore_errors=True)
