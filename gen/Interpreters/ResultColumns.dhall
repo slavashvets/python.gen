@@ -1,20 +1,25 @@
-let Deps = ../Deps/package.dhall
+let Prelude = ../Deps/Prelude.dhall
 
-let Algebra = ../Algebras/Interpreter.dhall
+let Lude = ../Deps/Lude.dhall
+
+let Model = ../Deps/Contract.dhall
 
 let ImportSet = ../Structures/ImportSet.dhall
 
 let CustomKind = ../Structures/CustomKind.dhall
 
+let OnUnsupported = ../Structures/OnUnsupported.dhall
+
 let Member = ./Member.dhall
-
-let Prelude = Deps.Prelude
-
-let Lude = Deps.Lude
 
 let Compiled = Lude.Compiled
 
-let Model = Deps.Sdk.Project
+let Config =
+      { packageName : Text
+      , importName : Text
+      , emitSync : Bool
+      , onUnsupported : OnUnsupported.Mode
+      }
 
 let Input = List Model.Member
 
@@ -53,7 +58,7 @@ let assemble
         }
 
 let run =
-      \(config : Algebra.Config) ->
+      \(config : Config) ->
       \(lookup : CustomKind.Lookup) ->
       \(rowClassName : Text) ->
       \(input : Input) ->
@@ -72,5 +77,8 @@ let run =
               )
               input
           )
+
+let Run =
+      Config -> CustomKind.Lookup -> Text -> Input -> Lude.Compiled.Type Output
 
 in  { Input, Output, run }

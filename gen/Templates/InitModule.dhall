@@ -1,4 +1,4 @@
-let Algebra = ../Algebras/Template.dhall
+let Sdk = ../Deps/Sdk.dhall
 
 -- A minimal package __init__.py: a module docstring plus an empty __all__.
 -- Used for the _generated subpackage root and the statements subpackage. The
@@ -15,4 +15,4 @@ let render =
         __all__: list[str] = []
         ''
 
-in  Algebra.module Params render
+in  Sdk.Sigs.template Params render

@@ -1,8 +1,6 @@
-let Deps = ../Deps/package.dhall
+let Prelude = ../Deps/Prelude.dhall
 
-let Algebra = ../Algebras/Template.dhall
-
-let Prelude = Deps.Prelude
+let Sdk = ../Deps/Sdk.dhall
 
 -- A statement's public surface: the function and, when the query returns rows,
 -- its frozen Row dataclass. functionName doubles as the leaf module name.
@@ -126,4 +124,4 @@ let run =
             ${allEntries}]
             ''
 
-in  Algebra.module Params run /\ { StatementExport, TypeExport }
+in  Sdk.Sigs.template Params run /\ { StatementExport, TypeExport }

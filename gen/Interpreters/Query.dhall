@@ -1,6 +1,6 @@
-let Deps = ../Deps/package.dhall
+let Prelude = ../Deps/Prelude.dhall
 
-let Algebra = ../Algebras/Interpreter.dhall
+let Lude = ../Deps/Lude.dhall
 
 let ImportSet = ../Structures/ImportSet.dhall
 
@@ -9,6 +9,8 @@ let CustomKind = ../Structures/CustomKind.dhall
 let PyIdent = ../Structures/PyIdent.dhall
 
 let Surface = ../Structures/Surface.dhall
+
+let OnUnsupported = ../Structures/OnUnsupported.dhall
 
 let RowsModule = ../Templates/RowsModule.dhall
 
@@ -20,13 +22,16 @@ let ParamsMember = ./ParamsMember.dhall
 
 let StatementModule = ../Templates/StatementModule.dhall
 
-let Prelude = Deps.Prelude
-
-let Lude = Deps.Lude
+let Config =
+      { packageName : Text
+      , importName : Text
+      , emitSync : Bool
+      , onUnsupported : OnUnsupported.Mode
+      }
 
 let Compiled = Lude.Compiled
 
-let Model = Deps.Sdk.Project
+let Model = ../Deps/Contract.dhall
 
 let Input = Model.Query
 
@@ -46,7 +51,7 @@ let Output =
       }
 
 let render =
-      \(config : Algebra.Config) ->
+      \(config : Config) ->
       \(input : Input) ->
       \(result : ResultModule.Output) ->
       \(fragments : QueryFragmentsModule.Output) ->
@@ -131,7 +136,7 @@ let render =
             }
 
 let run =
-      \(config : Algebra.Config) ->
+      \(config : Config) ->
       \(lookup : CustomKind.Lookup) ->
       \(input : Input) ->
         let rowClassName = input.name.inPascalCase ++ "Row"
@@ -171,5 +176,7 @@ let run =
                       )
                   )
               )
+
+let Run = Config -> CustomKind.Lookup -> Input -> Lude.Compiled.Type Output
 
 in  { Input, Output, run }

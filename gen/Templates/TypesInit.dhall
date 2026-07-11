@@ -1,6 +1,6 @@
-let Deps = ../Deps/package.dhall
+let Prelude = ../Deps/Prelude.dhall
 
-let Algebra = ../Algebras/Template.dhall
+let Sdk = ../Deps/Sdk.dhall
 
 let Export = { moduleName : Text, typeName : Text }
 
@@ -9,7 +9,7 @@ let Params = { exports : List Export }
 let run =
       \(params : Params) ->
         let exportLines =
-              Deps.Prelude.Text.concatMapSep
+              Prelude.Text.concatMapSep
                 "\n"
                 Export
                 ( \(export : Export) ->
@@ -21,4 +21,4 @@ let run =
             ${exportLines}
             ''
 
-in  Algebra.module Params run /\ { Export }
+in  Sdk.Sigs.template Params run /\ { Export }

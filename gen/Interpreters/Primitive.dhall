@@ -1,10 +1,19 @@
-let Deps = ../Deps/package.dhall
+let Lude = ../Deps/Lude.dhall
+
+let Model = ../Deps/Contract.dhall
+
+let Sdk = ../Deps/Sdk.dhall
 
 let ImportSet = ../Structures/ImportSet.dhall
 
-let Algebra = ../Algebras/Interpreter.dhall
+let OnUnsupported = ../Structures/OnUnsupported.dhall
 
-let Model = Deps.Sdk.Project
+let Config =
+      { packageName : Text
+      , importName : Text
+      , emitSync : Bool
+      , onUnsupported : OnUnsupported.Mode
+      }
 
 let Input = Model.Primitive
 
@@ -13,16 +22,16 @@ let Output = { pyType : Text, imports : ImportSet.Type }
 let supported =
       \(pyType : Text) ->
       \(imports : ImportSet.Type) ->
-        Deps.Lude.Compiled.ok Output { pyType, imports }
+        Lude.Compiled.ok Output { pyType, imports }
 
 let unsupported =
       \(pgType : Text) ->
-        Deps.Lude.Compiled.report Output [ pgType ] "Unsupported type"
+        Lude.Compiled.report Output [ pgType ] "Unsupported type"
 
 let plain = \(pyType : Text) -> supported pyType ImportSet.empty
 
 let run =
-      \(config : Algebra.Config) ->
+      \(config : Config) ->
       \(input : Input) ->
         merge
           { Bit = unsupported "bit"
@@ -89,4 +98,4 @@ let run =
           }
           input
 
-in  Algebra.module Input Output run
+in  Sdk.Sigs.interpreter Config Input Output run

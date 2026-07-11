@@ -1,4 +1,4 @@
-let Algebra = ../Algebras/Template.dhall
+let Sdk = ../Deps/Sdk.dhall
 
 -- The fixed _runtime.py body, emitted once per generated package. No per-query
 -- customization. Mirrors DESIGN section 3 with two strict-clean adjustments the
@@ -160,5 +160,5 @@ let syncContent =
               _ = cur.execute(sql, params)
       ''
 
-in    Algebra.module {} (\(_ : {}) -> content)
+in    Sdk.Sigs.template {} (\(_ : {}) -> content)
     /\ { runSync = \(_ : {}) -> syncContent }

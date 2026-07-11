@@ -1,6 +1,6 @@
-let Deps = ../Deps/package.dhall
+let Prelude = ../Deps/Prelude.dhall
 
-let Algebra = ../Algebras/Template.dhall
+let Sdk = ../Deps/Sdk.dhall
 
 let Field = { fieldName : Text, fieldType : Text }
 
@@ -12,7 +12,7 @@ let Params = { typeName : Text, extraImports : List Text, fields : List Field }
 let run =
       \(params : Params) ->
         let fieldLines =
-              Deps.Prelude.Text.concatMapSep
+              Prelude.Text.concatMapSep
                 "\n"
                 Field
                 ( \(field : Field) ->
@@ -21,12 +21,12 @@ let run =
                 params.fields
 
         let imports =
-              if    Deps.Prelude.List.null Text params.extraImports
+              if    Prelude.List.null Text params.extraImports
               then  "from dataclasses import dataclass"
               else  ''
                     from dataclasses import dataclass
 
-                    ${Deps.Prelude.Text.concatSep "\n" params.extraImports}''
+                    ${Prelude.Text.concatSep "\n" params.extraImports}''
 
         in  ''
             ${imports}
@@ -43,4 +43,4 @@ let run =
             ${fieldLines}
             ''
 
-in  Algebra.module Params run /\ { Field }
+in  Sdk.Sigs.template Params run /\ { Field }

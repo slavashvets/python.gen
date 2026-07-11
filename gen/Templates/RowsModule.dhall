@@ -1,10 +1,10 @@
-let Deps = ../Deps/package.dhall
+let Prelude = ../Deps/Prelude.dhall
 
-let Algebra = ../Algebras/Template.dhall
+let Lude = ../Deps/Lude.dhall
+
+let Sdk = ../Deps/Sdk.dhall
 
 let ImportSet = ../Structures/ImportSet.dhall
-
-let Prelude = Deps.Prelude
 
 -- The shared row module: every query's frozen Row dataclass and its decode
 -- function live here once, so the async and sync statement modules import the
@@ -25,7 +25,7 @@ let indentAll
       \(text : Text) ->
         let pad = Prelude.Text.replicate n " "
 
-        in  pad ++ Deps.Lude.Text.indentNonEmpty n text
+        in  pad ++ Lude.Text.indentNonEmpty n text
 
 let importLineIf
     : Bool -> Text -> List Text
@@ -118,4 +118,4 @@ let run =
         ++  Prelude.Text.concatMapSep "\n\n\n" RowDef renderRow params.rows
         ++  "\n"
 
-in  Algebra.module Params run /\ { RowDef }
+in  Sdk.Sigs.template Params run /\ { RowDef }

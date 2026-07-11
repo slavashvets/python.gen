@@ -1,12 +1,12 @@
-let Algebra = ../Algebras/Template.dhall
+let Prelude = ../Deps/Prelude.dhall
 
-let Deps = ../Deps/package.dhall
+let Lude = ../Deps/Lude.dhall
+
+let Sdk = ../Deps/Sdk.dhall
 
 let ImportSet = ../Structures/ImportSet.dhall
 
 let Surface = ../Structures/Surface.dhall
-
-let Prelude = Deps.Prelude
 
 -- Prefix every line (including the first) with `n` spaces, leaving blank lines
 -- untouched so trailing whitespace never appears.
@@ -16,7 +16,7 @@ let indentAll
       \(text : Text) ->
         let pad = Prelude.Text.replicate n " "
 
-        in  pad ++ Deps.Lude.Text.indentNonEmpty n text
+        in  pad ++ Lude.Text.indentNonEmpty n text
 
 -- A statement module is the thin per-surface I/O wrapper: it imports its Row
 -- dataclass and decode function from the shared `_rows` module and renders one
@@ -187,7 +187,7 @@ let renderCall
             then  "return ${await}${params.helperName}(conn, _SQL, params, ${params.decodeName})"
             else  "return ${await}${params.helperName}(conn, _SQL, params)"
 
-in  Algebra.module
+in  Sdk.Sigs.template
       Params
       ( \(params : Params) ->
               renderImports params

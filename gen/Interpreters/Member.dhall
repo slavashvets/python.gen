@@ -1,4 +1,8 @@
-let Deps = ../Deps/package.dhall
+let Lude = ../Deps/Lude.dhall
+
+let Prelude = ../Deps/Prelude.dhall
+
+let Model = ../Deps/Contract.dhall
 
 let ImportSet = ../Structures/ImportSet.dhall
 
@@ -6,13 +10,16 @@ let CustomKind = ../Structures/CustomKind.dhall
 
 let PyIdent = ../Structures/PyIdent.dhall
 
-let Algebra = ../Algebras/Interpreter.dhall
-
-let Lude = Deps.Lude
-
-let Model = Deps.Sdk.Project
+let OnUnsupported = ../Structures/OnUnsupported.dhall
 
 let Value = ./Value.dhall
+
+let Config =
+      { packageName : Text
+      , importName : Text
+      , emitSync : Bool
+      , onUnsupported : OnUnsupported.Mode
+      }
 
 let Input = Model.Member
 
@@ -29,7 +36,7 @@ let Output =
       }
 
 let run =
-      \(config : Algebra.Config) ->
+      \(config : Config) ->
       \(lookup : CustomKind.Lookup) ->
       \(input : Input) ->
         -- Result-column / composite-field name becomes a dataclass field and decode
@@ -95,7 +102,7 @@ let run =
                       \(fields : List CustomKind.CompositeField) ->
                       \(src : Text) ->
                         let fieldTypes =
-                              Deps.Prelude.Text.concatMapSep
+                              Prelude.Text.concatMapSep
                                 ", "
                                 CustomKind.CompositeField
                                 (\(f : CustomKind.CompositeField) -> f.pyType)
@@ -120,7 +127,7 @@ let run =
                             , decodeExpr = passthroughDecode
                             }
                       , Custom =
-                          Deps.Prelude.Optional.fold
+                          Prelude.Optional.fold
                             Model.Name
                             value.scalar.customRef
                             (Lude.Compiled.Type Output)
@@ -235,6 +242,6 @@ let run =
 
         in  Lude.Compiled.flatMap Value.Output Output buildOutput compiledValue
 
-let Run = Algebra.Config -> CustomKind.Lookup -> Input -> Lude.Compiled.Type Output
+let Run = Config -> CustomKind.Lookup -> Input -> Lude.Compiled.Type Output
 
 in  { Input, Output, Run, run }

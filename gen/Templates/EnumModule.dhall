@@ -1,6 +1,6 @@
-let Deps = ../Deps/package.dhall
+let Prelude = ../Deps/Prelude.dhall
 
-let Algebra = ../Algebras/Template.dhall
+let Sdk = ../Deps/Sdk.dhall
 
 let Variant = { memberName : Text, pgValue : Text }
 
@@ -16,18 +16,18 @@ let run =
         let escapeLabel
             : Text -> Text
             = \(raw : Text) ->
-                Deps.Prelude.Function.composeList
+                Prelude.Function.composeList
                   Text
-                  [ Deps.Prelude.Text.replace "\\" "\\\\"
-                  , Deps.Prelude.Text.replace "\r" "\\r"
-                  , Deps.Prelude.Text.replace "\n" "\\n"
-                  , Deps.Prelude.Text.replace "\t" "\\t"
-                  , Deps.Prelude.Text.replace "\"" "\\\""
+                  [ Prelude.Text.replace "\\" "\\\\"
+                  , Prelude.Text.replace "\r" "\\r"
+                  , Prelude.Text.replace "\n" "\\n"
+                  , Prelude.Text.replace "\t" "\\t"
+                  , Prelude.Text.replace "\"" "\\\""
                   ]
                   raw
 
         let memberLines =
-              Deps.Prelude.Text.concatMapSep
+              Prelude.Text.concatMapSep
                 "\n"
                 Variant
                 ( \(variant : Variant) ->
@@ -43,4 +43,4 @@ let run =
             ${memberLines}
             ''
 
-in  Algebra.module Params run /\ { Variant }
+in  Sdk.Sigs.template Params run /\ { Variant }

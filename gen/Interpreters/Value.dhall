@@ -1,16 +1,23 @@
-let Deps = ../Deps/package.dhall
+let Lude = ../Deps/Lude.dhall
+
+let Prelude = ../Deps/Prelude.dhall
+
+let Model = ../Deps/Contract.dhall
+
+let Sdk = ../Deps/Sdk.dhall
 
 let ImportSet = ../Structures/ImportSet.dhall
 
-let Algebra = ../Algebras/Interpreter.dhall
-
-let Lude = Deps.Lude
-
-let Prelude = Deps.Prelude
-
-let Model = Deps.Sdk.Project
+let OnUnsupported = ../Structures/OnUnsupported.dhall
 
 let Scalar = ./Scalar.dhall
+
+let Config =
+      { packageName : Text
+      , importName : Text
+      , emitSync : Bool
+      , onUnsupported : OnUnsupported.Mode
+      }
 
 let Input = Model.Value
 
@@ -23,7 +30,7 @@ let Output =
       }
 
 let run =
-      \(config : Algebra.Config) ->
+      \(config : Config) ->
       \(input : Input) ->
         Lude.Compiled.map
           Scalar.Output
@@ -62,4 +69,4 @@ let run =
           )
           (Scalar.run config input.scalar)
 
-in  Algebra.module Input Output run
+in  Sdk.Sigs.interpreter Config Input Output run

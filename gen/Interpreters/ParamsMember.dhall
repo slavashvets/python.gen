@@ -1,16 +1,23 @@
-let Deps = ../Deps/package.dhall
+let Lude = ../Deps/Lude.dhall
+
+let Prelude = ../Deps/Prelude.dhall
+
+let Model = ../Deps/Contract.dhall
 
 let ImportSet = ../Structures/ImportSet.dhall
 
 let CustomKind = ../Structures/CustomKind.dhall
 
-let Algebra = ../Algebras/Interpreter.dhall
-
-let Lude = Deps.Lude
-
-let Model = Deps.Sdk.Project
+let OnUnsupported = ../Structures/OnUnsupported.dhall
 
 let Value = ./Value.dhall
+
+let Config =
+      { packageName : Text
+      , importName : Text
+      , emitSync : Bool
+      , onUnsupported : OnUnsupported.Mode
+      }
 
 let Input = Model.Member
 
@@ -192,7 +199,7 @@ let scalarIsJsonb =
 
 let valueIsArray =
       \(value : Model.Value) ->
-        Deps.Prelude.Optional.fold
+        Prelude.Optional.fold
           Model.ArraySettings
           value.arraySettings
           Bool
@@ -204,15 +211,15 @@ let valueIsArray =
 -- the two must not be collapsed.
 let isJsonbScalar =
       \(value : Model.Value) ->
-        Deps.Prelude.Bool.and
-          [ scalarIsJsonb value, Deps.Prelude.Bool.not (valueIsArray value) ]
+        Prelude.Bool.and
+          [ scalarIsJsonb value, Prelude.Bool.not (valueIsArray value) ]
 
 let isJsonScalar =
       \(value : Model.Value) ->
-        Deps.Prelude.Bool.and
+        Prelude.Bool.and
           [ scalarIsJson value
-          , Deps.Prelude.Bool.not (scalarIsJsonb value)
-          , Deps.Prelude.Bool.not (valueIsArray value)
+          , Prelude.Bool.not (scalarIsJsonb value)
+          , Prelude.Bool.not (valueIsArray value)
           ]
 
 -- A json/jsonb ARRAY param has no faithful psycopg bind (Jsonb wraps a scalar,
@@ -221,10 +228,10 @@ let isJsonScalar =
 -- in SQL is the supported route (the param then types as text[], not json[]).
 let isJsonArray =
       \(value : Model.Value) ->
-        Deps.Prelude.Bool.and [ scalarIsJson value, valueIsArray value ]
+        Prelude.Bool.and [ scalarIsJson value, valueIsArray value ]
 
 let run =
-      \(config : Algebra.Config) ->
+      \(config : Config) ->
       \(lookup : CustomKind.Lookup) ->
       \(input : Input) ->
         let fieldName = pySafeName input.name.inSnakeCase
@@ -251,7 +258,7 @@ let run =
         let compositeBind =
               \(fields : List CustomKind.CompositeField) ->
                 let joinedFields =
-                      Deps.Prelude.Text.concatMapSep
+                      Prelude.Text.concatMapSep
                         ", "
                         CustomKind.CompositeField
                         ( \(f : CustomKind.CompositeField) ->
@@ -265,8 +272,8 @@ let run =
                 -- as a 1-tuple, so force it for exactly one field; concatMapSep
                 -- already inserts the internal comma for two or more.
                 let trailingComma =
-                      if    Deps.Prelude.Natural.equal
-                              ( Deps.Prelude.List.length
+                      if    Prelude.Natural.equal
+                              ( Prelude.List.length
                                   CustomKind.CompositeField
                                   fields
                               )
@@ -301,7 +308,7 @@ let run =
                         , needsJsonbImport
                         }
 
-                in  Deps.Prelude.Optional.fold
+                in  Prelude.Optional.fold
                       Model.Name
                       value.scalar.customRef
                       (Lude.Compiled.Type Output)
@@ -377,6 +384,6 @@ let run =
 
         in  Lude.Compiled.flatMap Value.Output Output buildOutput compiledValue
 
-let Run = Algebra.Config -> CustomKind.Lookup -> Input -> Lude.Compiled.Type Output
+let Run = Config -> CustomKind.Lookup -> Input -> Lude.Compiled.Type Output
 
 in  { Input, Output, Run, run }

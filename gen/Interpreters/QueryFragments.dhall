@@ -1,16 +1,21 @@
-let Deps = ../Deps/package.dhall
+let Prelude = ../Deps/Prelude.dhall
 
-let Algebra = ../Algebras/Interpreter.dhall
+let Lude = ../Deps/Lude.dhall
 
-let Prelude = Deps.Prelude
-
-let Sdk = Deps.Sdk
-
-let Lude = Deps.Lude
+let Sdk = ../Deps/Sdk.dhall
 
 let Compiled = Lude.Compiled
 
-let Model = Deps.Sdk.Project
+let Model = ../Deps/Contract.dhall
+
+let OnUnsupported = ../Structures/OnUnsupported.dhall
+
+let Config =
+      { packageName : Text
+      , importName : Text
+      , emitSync : Bool
+      , onUnsupported : OnUnsupported.Mode
+      }
 
 let Input = Model.QueryFragments
 
@@ -47,8 +52,8 @@ let renderSql
         Prelude.Text.concatMap Model.QueryFragment renderFragment fragments
 
 let run =
-      \(config : Algebra.Config) ->
+      \(config : Config) ->
       \(input : Input) ->
         Compiled.ok Output { sqlLiteral = renderSql input }
 
-in  Algebra.module Input Output run
+in  Sdk.Sigs.interpreter Config Input Output run

@@ -1,4 +1,4 @@
-let Algebra = ../Algebras/Template.dhall
+let Sdk = ../Deps/Sdk.dhall
 
 -- The surface-agnostic core of a generated package, emitted once at
 -- _generated/_core.py. It owns the names shared by every module and by both the
@@ -43,4 +43,4 @@ let content =
           )
       ''
 
-in  Algebra.module {} (\(_ : {}) -> content)
+in  Sdk.Sigs.template {} (\(_ : {}) -> content)

@@ -1,10 +1,8 @@
-let Deps = ../Deps/package.dhall
+let Prelude = ../Deps/Prelude.dhall
 
-let Algebra = ../Algebras/Template.dhall
+let Sdk = ../Deps/Sdk.dhall
 
 let Surface = ../Structures/Surface.dhall
-
-let Prelude = Deps.Prelude
 
 -- Per-connection type registration, emitted once per surface. psycopg decodes an
 -- unregistered composite as a text string; registering its CompositeInfo makes
@@ -96,4 +94,4 @@ let run =
 
         in  Prelude.Text.concatSep "\n" allLines ++ "\n"
 
-in  Algebra.module Params run
+in  Sdk.Sigs.template Params run

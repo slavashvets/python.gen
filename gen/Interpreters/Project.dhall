@@ -1,12 +1,10 @@
-let Deps = ../Deps/package.dhall
+let Lude = ../Deps/Lude.dhall
 
-let Algebra = ../Algebras/Interpreter.dhall
+let Prelude = ../Deps/Prelude.dhall
 
-let Lude = Deps.Lude
+let Model = ../Deps/Contract.dhall
 
-let Prelude = Deps.Prelude
-
-let Model = Deps.Sdk.Project
+let Sdk = ../Deps/Sdk.dhall
 
 let CustomKind = ../Structures/CustomKind.dhall
 
@@ -40,6 +38,13 @@ let OnUnsupported = ../Structures/OnUnsupported.dhall
 
 let Report = { path : List Text, message : Text }
 
+let Config =
+      { packageName : Text
+      , importName : Text
+      , emitSync : Bool
+      , onUnsupported : OnUnsupported.Mode
+      }
+
 let Input = Model.Project
 
 let Output = Lude.Files.Type
@@ -67,7 +72,7 @@ let withHeader =
 -- Internal interpreter config (importName etc.) is only needed to satisfy
 -- Value.run's signature; rendering a composite field's pyType does not read it.
 let lookupConfig
-    : Algebra.Config
+    : Config
     = { packageName = ""
       , importName = ""
       , emitSync = False
@@ -175,7 +180,7 @@ let buildLookup =
           (\(_ : Model.Name) -> CustomKind.TypeKind.Absent)
 
 let combineOutputs =
-      \(config : Algebra.Config) ->
+      \(config : Config) ->
       \(input : Input) ->
       \(queries : List QueryGen.Output) ->
       -- Already the post-Skip-filter surviving set (see `run`); equal to
@@ -430,7 +435,7 @@ let combineOutputs =
 let QueryCheck = { query : Model.Query, keep : Bool, warning : Optional Report }
 
 let run =
-      \(config : Algebra.Config) ->
+      \(config : Config) ->
       \(input : Input) ->
         let skip = merge { Fail = False, Skip = True } config.onUnsupported
 
@@ -542,4 +547,4 @@ let run =
 
         in  Lude.Compiled.appendWarnings Output skipWarnings combined
 
-in  Algebra.module Input Output run
+in  Sdk.Sigs.interpreter Config Input Output run

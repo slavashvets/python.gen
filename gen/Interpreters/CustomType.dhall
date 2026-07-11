@@ -1,22 +1,29 @@
-let Deps = ../Deps/package.dhall
+let Lude = ../Deps/Lude.dhall
+
+let Prelude = ../Deps/Prelude.dhall
+
+let Model = ../Deps/Contract.dhall
+
+let Sdk = ../Deps/Sdk.dhall
 
 let ImportSet = ../Structures/ImportSet.dhall
 
 let CustomKind = ../Structures/CustomKind.dhall
 
-let Algebra = ../Algebras/Interpreter.dhall
-
-let Lude = Deps.Lude
-
-let Prelude = Deps.Prelude
-
-let Model = Deps.Sdk.Project
+let OnUnsupported = ../Structures/OnUnsupported.dhall
 
 let MemberGen = ./Member.dhall
 
 let EnumModule = ../Templates/EnumModule.dhall
 
 let CompositeModule = ../Templates/CompositeModule.dhall
+
+let Config =
+      { packageName : Text
+      , importName : Text
+      , emitSync : Bool
+      , onUnsupported : OnUnsupported.Mode
+      }
 
 let Input = Model.CustomType
 
@@ -75,7 +82,7 @@ let renderExtraImports =
               )
 
 let run =
-      \(config : Algebra.Config) ->
+      \(config : Config) ->
       \(input : Input) ->
         let typeName = input.name.inPascalCase
 
@@ -174,4 +181,4 @@ let run =
               }
               input.definition
 
-in  { Input, Output, TypeKind, run }
+in  Sdk.Sigs.interpreter Config Input Output run

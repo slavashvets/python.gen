@@ -1,14 +1,21 @@
-let Deps = ../Deps/package.dhall
+let Lude = ../Deps/Lude.dhall
+
+let Model = ../Deps/Contract.dhall
+
+let Sdk = ../Deps/Sdk.dhall
 
 let ImportSet = ../Structures/ImportSet.dhall
 
-let Algebra = ../Algebras/Interpreter.dhall
-
-let Lude = Deps.Lude
-
-let Model = Deps.Sdk.Project
+let OnUnsupported = ../Structures/OnUnsupported.dhall
 
 let Primitive = ./Primitive.dhall
+
+let Config =
+      { packageName : Text
+      , importName : Text
+      , emitSync : Bool
+      , onUnsupported : OnUnsupported.Mode
+      }
 
 let Input = Model.Scalar
 
@@ -24,7 +31,7 @@ let Output =
       }
 
 let run =
-      \(config : Algebra.Config) ->
+      \(config : Config) ->
       \(input : Input) ->
         merge
           { Primitive =
@@ -52,4 +59,4 @@ let run =
           }
           input
 
-in  Algebra.module Input Output run /\ { ScalarDecode }
+in  Sdk.Sigs.interpreter Config Input Output run /\ { ScalarDecode }
