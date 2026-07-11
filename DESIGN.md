@@ -1,7 +1,7 @@
 # python.gen DESIGN
 
 Status: current. This describes the generator as shipped, not a plan. The code
-is the source of truth: the Dhall generator under `gen/`, the fixture project
+is the source of truth: the Dhall generator under `src/`, the fixture project
 and golden output under `tests/`. When this doc and the tree disagree, the
 tree wins.
 
@@ -378,34 +378,37 @@ overwritten on every run. Do not hand-edit it.
 
 ## 10. Generator decomposition
 
-`gen/Gen.dhall` is the entry point handed to gen-sdk:
+`src/package.dhall` is the entry point handed to gen-sdk:
 
 ```dhall
 let Sdk = ./Deps/Sdk.dhall
 
-in  Sdk ./Config.dhall ./compile.dhall
+let Config = ./Config.dhall
+
+let interpret = ./Interpret.dhall
+
+in  Sdk.Sigs.generator Config Config/default interpret
 ```
 
-The Sdk `module` function has signature `\(Config : Type) -> \(compile) ->
-{ contractVersion, Config, compile, compileToFileMap }`, and
-`compile : Optional Config -> Project -> Lude.Compiled.Type Lude.Files.Type`,
-where `Files.Type = List { path : Text, content : Text }`. `compile.dhall`
-folds the optional user config into the internal interpreter config and
-calls `Interpreters/Project.dhall`, which traverses queries and custom types
-and assembles the file list.
+`Sdk.Sigs.generator` has signature `\(Config : Type) -> \(defaultConfig : Config) ->
+\(interpret : Config -> Contract.Project -> Contract.Output) -> ...`; it curries
+`interpret` against `defaultConfig` whenever the user config is absent and hands
+the result to gen-contract's `Contract.module`. `Interpret.dhall` folds the
+optional user config into the internal interpreter config and calls
+`Interpreters/Project.dhall`, which traverses queries and custom types and
+assembles the file list (`Contract.Output`).
 
-`gen/` mirrors a typical pgn gen-sdk generator, Python-flavored. The
-algebra/interpreter/template split keeps assembly separate from rendering.
+`src/` mirrors a typical pgn gen-sdk generator, Python-flavored: `Interpreters/`
+assembles data, `Templates/` renders it to Python text. The interpreter/template
+algebra signatures themselves live in gen-sdk's `Sdk.Sigs` (`interpreter.dhall`/
+`template.dhall`), not a local `Algebras/` dir.
 
 ```text
-gen/
-  Gen.dhall                  # Sdk Config compile  (entry handed to gen-sdk)
+src/
+  package.dhall              # Sdk.Sigs.generator Config Config/default interpret  (entry handed to gen-sdk)
   Config.dhall               # user config TYPE: { packageName, emitSync, onUnsupported }
-  compile.dhall               # derive interpreter Config from user Config, call Project.run
-  Deps/                      # pinned remote imports (gen-sdk module + Project, lude, Prelude)
-  Algebras/
-    Interpreter.dhall        # Config + `module Input Output run` ; Run = Config -> Input -> Compiled Output
-    Template.dhall           # `module Params run` ; Run = Params -> Text
+  Interpret.dhall            # derive interpreter Config from user Config, call Project.run
+  Deps/                      # pinned remote imports: gen-sdk, gen-contract, lude, dhall Prelude
   Structures/
     Surface.dhall            # async/sync token table (section 4)
     CustomKind.dhall         # Lookup : Name -> < Enum | Composite | Absent > + composite fields
@@ -426,6 +429,7 @@ gen/
     Project.dhall            # traverse queries+customTypes, assemble all files + facade + header,
                               # apply the Skip filter (section 11)
   Templates/
+    CoreModule.dhall         # shared _core.py: JsonValue, NoRowError/DecodeError, require_array
     RuntimeModule.dhall      # async + sync _runtime.py bodies
     RowsModule.dhall         # shared _rows.py (Row dataclasses + decode fns)
     StatementModule.dhall    # one per-surface statement wrapper
@@ -629,11 +633,11 @@ SQL rendering are largely driver-agnostic.
 
 CI runs two independent jobs (`.github/workflows/ci.yml`): `harness` (the
 pytest suite against a live Postgres) and `contract` (compiles gen-sdk's
-`Fixtures.Exhaustive` via `tests/Exhaustive.dhall` and runs basedpyright
+`Fixtures.Exhaustive` via `demos/Exhaustive.dhall` and runs basedpyright
 strict on the result). The `contract` job needs `nikita-volkov/dhall-directory-tree.github-action`,
 a Docker action bundling a forked Dhall evaluator; the local `dhall` CLI most
 people have installed is the standard dhall-lang build and does not
-understand `Text/equal`, so it cannot run `tests/Exhaustive.dhall` directly.
+understand `Text/equal`, so it cannot run `demos/Exhaustive.dhall` directly.
 Reproduce the `contract` job locally with [`act`](https://github.com/nektos/act)
 (not installed in this environment; `act -j contract` pulls the same pinned
 Docker action and runs the job as GitHub would).

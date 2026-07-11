@@ -86,7 +86,7 @@ jobs:
         id: resolve
         uses: nikita-volkov/dhall-resolve.github-action@7caaf1fdb40ac864bc02e37575f577ee084713a8 # v3
         with:
-          file: gen/Gen.dhall
+          file: src/package.dhall
           minify: true
 
       - name: Prepare changelog for release

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Cold-cache benchmark of `pgn generate` on the fixture project, comparing the
-# current gen (Deps imported `as Source`) against the same tree with the
+# current src (Deps imported `as Source`) against the same tree with the
 # pre-as-Source Deps (plain pinned imports). Both variants run the same pgn
 # binary by default, so the measurement isolates the import mode itself.
 #
@@ -24,7 +24,7 @@ trap 'rm -rf "$work"' EXIT
 
 prepare() { # $1 = variant root; mirrors the repo layout the fixture expects
   rm -rf "$1" && mkdir -p "$1/tests"
-  cp -R "$root/gen" "$1/gen"
+  cp -R "$root/src" "$1/src"
   cp -R "$root/tests/fixture-project" "$1/tests/fixture-project"
   rm -f "$1/tests/fixture-project/freeze1.pgn.yaml"
   rm -rf "$1/tests/fixture-project/artifacts"
@@ -34,9 +34,23 @@ prepare() { # $1 = variant root; mirrors the repo layout the fixture expects
 # normalized-expression pins (an `as Source` pin hashes the import's source,
 # so the two modes need different sha256 values for the same version).
 strip_as_source() { # $1 = variant root
-  perl -i -ne 'print unless /^\s*as Source$/' "$1"/gen/Deps/*.dhall
-  perl -i -pe 's/8d43544ecb0e612406af3133bdbca51138c704a77a5a29ef62fe034d0e77a3a6/b9f7bb842345f3864c71e877fda4200306ba5c044a43e6f7713a23bc4769b91a/' "$1/gen/Deps/Sdk.dhall"
-  perl -i -pe 's/46b527b071eba96a17e76b4bc5774645714dd5b4355974d221e705aa7c126e77/14c43eec97972ae27afe3386ff937d04db66f84273d5551476361db12d2c4b50/' "$1/gen/Deps/Lude.dhall"
+  perl -i -ne 'print unless /^\s*as Source$/' "$1"/src/Deps/*.dhall
+
+  # gen-sdk v2.0.0's src/package.dhall: `mise x -- dhall hash` against the
+  # live GitHub-hosted package (both `... as Source` and the plain import)
+  # returns the SAME sha256 (b9def6ab1179bc4aaae7fc6e91977f094f75934cd5755175c294a9e97ca71b15),
+  # matching the value already committed in src/Deps/Sdk.dhall -- so, unlike
+  # the old v0.11.0 pin this pair used to target (where the two genuinely
+  # differed: 8d43544e...->b9f7bb84...), no character swap is needed here
+  # after the strip above; the committed pin already equals the plain-import
+  # target. See docs/superpowers/plans/2026-07-11-gen-sdk-v2-migration.md
+  # Task 6 for how this was verified (dhall's local import cache made the
+  # lookup instant; a cold, uncached fetch of a *different* URL hung in this
+  # sandbox, so treat network reachability here as best-effort, not given).
+
+  # lude v5.1.0 is unchanged by this migration (see src/Deps/Lude.dhall), so
+  # its existing as-Source -> plain-import hash swap below is still correct.
+  perl -i -pe 's/46b527b071eba96a17e76b4bc5774645714dd5b4355974d221e705aa7c126e77/14c43eec97972ae27afe3386ff937d04db66f84273d5551476361db12d2c4b50/' "$1/src/Deps/Lude.dhall"
 }
 
 measure() { # $1 = label, $2 = variant root, $3 = pgn binary

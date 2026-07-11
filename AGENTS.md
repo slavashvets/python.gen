@@ -33,6 +33,6 @@ already says.
 
 ## Dhall
 
-`gen/` pins its remote imports by sha256 (`gen/Deps/*.dhall`). Bump those
+`src/` pins its remote imports by sha256 (`src/Deps/*.dhall`). Bump those
 deliberately, one at a time, and re-run the harness before committing a pin
 change.

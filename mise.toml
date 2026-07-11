@@ -35,10 +35,10 @@ run = "bench/generate.sh without"
 # Regenerates only the "python" artifact: a full 7-artifact generate peaks at
 # ~31 GB RSS (memory goes to normalizing the generator closure per artifact,
 # see ci.yml), a single-artifact one at ~10 GB. The temp copy guarantees a
-# fresh resolve of the working-tree gen/ (no stale freeze) and keeps pgn's
+# fresh resolve of the working-tree src/ (no stale freeze) and keeps pgn's
 # scratch files out of the repo.
 [tasks.golden]
-description = "Refresh tests/golden from the working-tree gen/ (single-artifact run)"
+description = "Refresh tests/golden from the working-tree src/ (single-artifact run)"
 run = '''
 #!/usr/bin/env bash
 set -euo pipefail
@@ -48,14 +48,14 @@ trap 'rm -rf "$tmp"' EXIT
 cp -R "$root/tests/fixture-project/." "$tmp/fixture"
 rm -f "$tmp/fixture/freeze1.pgn.yaml"
 rm -rf "$tmp/fixture/artifacts"
-python3 - "$tmp/fixture/project1.pgn.yaml" "$root/gen/Gen.dhall" <<'EOF'
+python3 - "$tmp/fixture/project1.pgn.yaml" "$root/src/package.dhall" <<'EOF'
 import sys
 from pathlib import Path
 
 p = Path(sys.argv[1])
 head, sep, _ = p.read_text().partition("  # The variants below")
 assert sep, "variants marker not found in project1.pgn.yaml"
-_ = p.write_text(head.rstrip().replace("../../gen/Gen.dhall", sys.argv[2]) + "\n")
+_ = p.write_text(head.rstrip().replace("../../src/package.dhall", sys.argv[2]) + "\n")
 EOF
 cd "$tmp/fixture"
 pgn --database-url "${PGN_TEST_DATABASE_URL:-postgresql://postgres:postgres@localhost:5432/postgres?sslmode=disable}" generate

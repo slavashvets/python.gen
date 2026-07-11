@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Wraps the Dhall-generated package (from tests/Exhaustive.dhall) in a minimal
+# Wraps the Dhall-generated package (from demos/Exhaustive.dhall) in a minimal
 # consumer shell, mirroring the hand-written tests/golden/ shell (pyproject.toml
 # + py.typed) so basedpyright strict runs against the same layout a real
 # consumer would import, per the full_package pattern in tests/conftest.py.

@@ -35,7 +35,7 @@ name:
 ```yaml
 artifacts:
   python:
-    gen: https://raw.githubusercontent.com/slavashvets/python.gen/master/gen/Gen.dhall
+    gen: https://raw.githubusercontent.com/slavashvets/python.gen/master/src/package.dhall
     config:
       packageName: my-db-client
       emitSync: true
@@ -61,10 +61,10 @@ database.
 
 | form            | example                                | works?                                    |
 | --------------- | --------------------------------------- | ------------------------------------------ |
-| plain http(s)   | `https://.../python.gen/gen/Gen.dhall`  | yes; pgn fetches it and every relative import over HTTP |
-| relative path    | `../path/to/python.gen/gen/Gen.dhall`   | yes, if you keep a local checkout next to your project |
-| absolute path    | `/abs/path/to/python.gen/gen/Gen.dhall` | yes, but the resulting freeze key is machine-specific |
-| `file://` URL    | `file:///abs/.../Gen.dhall`             | rejected; pgn's project schema does not accept `file://` |
+| plain http(s)   | `https://.../python.gen/src/package.dhall`  | yes; pgn fetches it and every relative import over HTTP |
+| relative path    | `../path/to/python.gen/src/package.dhall`   | yes, if you keep a local checkout next to your project |
+| absolute path    | `/abs/path/to/python.gen/src/package.dhall` | yes, but the resulting freeze key is machine-specific |
+| `file://` URL    | `file:///abs/.../package.dhall`             | rejected; pgn's project schema does not accept `file://` |
 
 Whichever form you use, the freeze file that caches the resolved generator
 (section "Freeze lifecycle" below) keys on the literal `gen:` value and
