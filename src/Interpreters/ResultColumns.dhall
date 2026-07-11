@@ -78,7 +78,4 @@ let run =
               input
           )
 
-let Run =
-      Config -> CustomKind.Lookup -> Text -> Input -> Lude.Compiled.Type Output
-
 in  { Input, Output, run }

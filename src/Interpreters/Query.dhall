@@ -177,6 +177,4 @@ let run =
                   )
               )
 
-let Run = Config -> CustomKind.Lookup -> Input -> Lude.Compiled.Type Output
-
 in  { Input, Output, run }
