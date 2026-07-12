@@ -3,17 +3,9 @@
 # SPDX-License-Identifier: MIT-0
 
 from enum import StrEnum
-from typing import cast
 
 
 class Mood(StrEnum):
     HAPPY = "happy"
     SAD = "sad"
     MEH = "meh"
-
-    @staticmethod
-    def pg_decode(src: object) -> "Mood":
-        return Mood(cast(str, src))
-
-    def pg_encode(self) -> "Mood":
-        return self

@@ -3,22 +3,8 @@
 # SPDX-License-Identifier: MIT-0
 
 from dataclasses import dataclass
-from typing import cast
 
 
 @dataclass(frozen=True, slots=True)
 class TagValue:
-    """Decoding/encoding this composite requires register_types(conn) first.
-
-    Without per-connection registration psycopg returns the value as a
-    raw string, which the generated pg_decode cannot splat into the dataclass.
-    """
-
     value: str | None
-
-    @staticmethod
-    def pg_decode(src: object) -> "TagValue":
-        return TagValue(*cast(tuple[str | None], src))
-
-    def pg_encode(self) -> tuple[str | None]:
-        return (self.value,)

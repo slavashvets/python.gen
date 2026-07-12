@@ -16,11 +16,12 @@ from psycopg.types.json import Json
 from psycopg.types.json import Jsonb
 
 from .._core import JsonValue
-from .._core import require_array as _require_array
 from .._runtime import fetch_single as _fetch_single
 from ..sync._runtime import fetch_single as _fetch_single_sync
+from ..types.a_codec_wrapper import ACodecWrapper
 from ..types.mood import Mood
 from ..types.point_2_d import Point2D
+from ..types.z_codec_payload import ZCodecPayload
 
 
 @dataclass(frozen=True, slots=True)
@@ -53,6 +54,9 @@ class InsertSpecimenRow:
     feeling: Mood
     moods: list[Mood | None] | None
     origin: Point2D | None
+    codec_payload: ZCodecPayload
+    codec_payloads: list[ZCodecPayload | None]
+    codec_wrapper: ACodecWrapper | None
     label: str
     rev: int
     meta: JsonValue
@@ -85,9 +89,12 @@ def _decode_row(row: Mapping[str, object]) -> InsertSpecimenRow:
         tags=_cast(list[str | None], row["tags"]),
         related_ids=_cast(list[UUID | None] | None, row["related_ids"]),
         grid=_cast(list[int | None] | None, row["grid"]),
-        feeling=Mood.pg_decode(row["feeling"]),
-        moods=None if row["moods"] is None else [None if v is None else Mood.pg_decode(v) for v in _cast(list[str | None], _require_array(row["moods"]))],
-        origin=None if row["origin"] is None else Point2D.pg_decode(row["origin"]),
+        feeling=_cast(Mood, row["feeling"]),
+        moods=_cast(list[Mood | None] | None, row["moods"]),
+        origin=_cast(Point2D | None, row["origin"]),
+        codec_payload=_cast(ZCodecPayload, row["codec_payload"]),
+        codec_payloads=_cast(list[ZCodecPayload | None], row["codec_payloads"]),
+        codec_wrapper=_cast(ACodecWrapper | None, row["codec_wrapper"]),
         label=_cast(str, row["label"]),
         rev=_cast(int, row["rev"]),
         meta=_cast(JsonValue, row["meta"]),
@@ -108,7 +115,7 @@ INSERT INTO specimen (
   doc_json, doc_jsonb,
   maybe_text, maybe_int, maybe_uuid, maybe_ts, maybe_num,
   tags, related_ids, grid,
-  feeling, moods, origin,
+  feeling, moods, origin, codec_payload, codec_payloads, codec_wrapper,
   label, rev, meta
 )
 VALUES (
@@ -117,7 +124,7 @@ VALUES (
   %(doc_json)s::json, %(doc_jsonb)s::jsonb,
   %(maybe_text)s, %(maybe_int)s, %(maybe_uuid)s, %(maybe_ts)s, %(maybe_num)s,
   %(tags)s, %(related_ids)s, %(grid)s,
-  %(feeling)s, %(moods)s::mood[], %(origin)s,
+  %(feeling)s, %(moods)s::mood[], %(origin)s, %(codec_payload)s, %(codec_payloads)s, %(codec_wrapper)s,
   'specimen', 1, '{}'::jsonb
 )
 RETURNING
@@ -127,7 +134,7 @@ RETURNING
   doc_json, doc_jsonb,
   maybe_text, maybe_int, maybe_uuid, maybe_ts, maybe_num,
   tags, related_ids, grid,
-  feeling, moods, origin,
+  feeling, moods, origin, codec_payload, codec_payloads, codec_wrapper,
   label, rev, meta
 """
 
@@ -162,6 +169,9 @@ async def insert_specimen(
     feeling: Mood,
     moods: list[Mood | None] | None,
     origin: Point2D | None,
+    codec_payload: ZCodecPayload,
+    codec_payloads: list[ZCodecPayload | None],
+    codec_wrapper: ACodecWrapper | None,
 ) -> InsertSpecimenRow:
     params: dict[str, object] = {
         "flag": flag,
@@ -186,9 +196,12 @@ async def insert_specimen(
         "tags": tags,
         "related_ids": related_ids,
         "grid": grid,
-        "feeling": feeling.pg_encode(),
-        "moods": None if moods is None else [None if x is None else x.pg_encode() for x in moods],
-        "origin": None if origin is None else origin.pg_encode(),
+        "feeling": feeling,
+        "moods": moods,
+        "origin": origin,
+        "codec_payload": codec_payload,
+        "codec_payloads": codec_payloads,
+        "codec_wrapper": codec_wrapper,
     }
     return await _fetch_single(conn, _SQL, params, _decode_row)
 
@@ -221,6 +234,9 @@ def insert_specimen_sync(
     feeling: Mood,
     moods: list[Mood | None] | None,
     origin: Point2D | None,
+    codec_payload: ZCodecPayload,
+    codec_payloads: list[ZCodecPayload | None],
+    codec_wrapper: ACodecWrapper | None,
 ) -> InsertSpecimenRow:
     params: dict[str, object] = {
         "flag": flag,
@@ -245,8 +261,11 @@ def insert_specimen_sync(
         "tags": tags,
         "related_ids": related_ids,
         "grid": grid,
-        "feeling": feeling.pg_encode(),
-        "moods": None if moods is None else [None if x is None else x.pg_encode() for x in moods],
-        "origin": None if origin is None else origin.pg_encode(),
+        "feeling": feeling,
+        "moods": moods,
+        "origin": origin,
+        "codec_payload": codec_payload,
+        "codec_payloads": codec_payloads,
+        "codec_wrapper": codec_wrapper,
     }
     return _fetch_single_sync(conn, _SQL, params, _decode_row)

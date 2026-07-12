@@ -28,7 +28,7 @@ def _decode_row(row: Mapping[str, object]) -> ListSpecimensByIdsRow:
     return ListSpecimensByIdsRow(
         id=_cast(int, row["id"]),
         pub_id=_cast(UUID, row["pub_id"]),
-        feeling=Mood.pg_decode(row["feeling"]),
+        feeling=_cast(Mood, row["feeling"]),
         title=_cast(str, row["title"]),
     )
 

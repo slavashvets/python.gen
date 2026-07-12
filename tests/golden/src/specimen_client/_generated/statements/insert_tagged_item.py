@@ -26,7 +26,7 @@ def _decode_row(row: Mapping[str, object]) -> InsertTaggedItemRow:
     return InsertTaggedItemRow(
         id=_cast(int, row["id"]),
         name=_cast(str, row["name"]),
-        tag=TagValue.pg_decode(row["tag"]),
+        tag=_cast(TagValue, row["tag"]),
     )
 
 
@@ -49,7 +49,7 @@ async def insert_tagged_item(
 ) -> InsertTaggedItemRow:
     params: dict[str, object] = {
         "name": name,
-        "tag": tag.pg_encode(),
+        "tag": tag,
     }
     return await _fetch_single(conn, _SQL, params, _decode_row)
 
@@ -62,6 +62,6 @@ def insert_tagged_item_sync(
 ) -> InsertTaggedItemRow:
     params: dict[str, object] = {
         "name": name,
-        "tag": tag.pg_encode(),
+        "tag": tag,
     }
     return _fetch_single_sync(conn, _SQL, params, _decode_row)

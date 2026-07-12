@@ -35,11 +35,11 @@ def _decode_row(row: Mapping[str, object]) -> ListSpecimensByFeelingRow:
     return ListSpecimensByFeelingRow(
         id=_cast(int, row["id"]),
         pub_id=_cast(UUID, row["pub_id"]),
-        feeling=Mood.pg_decode(row["feeling"]),
+        feeling=_cast(Mood, row["feeling"]),
         title=_cast(str, row["title"]),
         label=_cast(str, row["label"]),
         rev=_cast(int, row["rev"]),
-        origin=None if row["origin"] is None else Point2D.pg_decode(row["origin"]),
+        origin=_cast(Point2D | None, row["origin"]),
         tags=_cast(list[str | None], row["tags"]),
         meta=_cast(JsonValue, row["meta"]),
     )
@@ -63,7 +63,7 @@ async def list_specimens_by_feeling(
     feeling: Mood | None,
 ) -> list[ListSpecimensByFeelingRow]:
     params: dict[str, object] = {
-        "feeling": None if feeling is None else feeling.pg_encode(),
+        "feeling": feeling,
     }
     return await _fetch_many(conn, _SQL, params, _decode_row)
 
@@ -74,6 +74,6 @@ def list_specimens_by_feeling_sync(
     feeling: Mood | None,
 ) -> list[ListSpecimensByFeelingRow]:
     params: dict[str, object] = {
-        "feeling": None if feeling is None else feeling.pg_encode(),
+        "feeling": feeling,
     }
     return _fetch_many_sync(conn, _SQL, params, _decode_row)

@@ -245,7 +245,15 @@ def test_combined_public_api_identity_and_signatures(full_package: Path) -> None
                 assert getattr(root, row_name) is row_class
                 assert getattr(sync, row_name) is row_class
 
-        for name in ("Mood", "Point2D", "TagValue", "JsonValue", "NoRowError"):
+        for name in (
+            "ACodecWrapper",
+            "JsonValue",
+            "Mood",
+            "NoRowError",
+            "Point2D",
+            "TagValue",
+            "ZCodecPayload",
+        ):
             assert getattr(root, name) is getattr(sync, name)
 
         register = import_module("specimen_client._generated._register")
@@ -253,6 +261,16 @@ def test_combined_public_api_identity_and_signatures(full_package: Path) -> None
         assert sync.register_types is register.register_types_sync
         assert "register_types" in root.__all__
         assert "register_types" in sync.__all__
+
+        source = Path(register.__file__).read_text()
+        child_async = source.index("z_codec_payload_info = await CompositeInfo.fetch")
+        parent_async = source.index("a_codec_wrapper_info = await CompositeInfo.fetch")
+        child_sync = source.index("z_codec_payload_info = CompositeInfo.fetch")
+        parent_sync = source.index("a_codec_wrapper_info = CompositeInfo.fetch")
+        assert child_async < parent_async
+        assert child_sync < parent_sync
+        assert source.count("from .types.z_codec_payload import ZCodecPayload") == 1
+        assert source.count("from .types.a_codec_wrapper import ACodecWrapper") == 1
 
 
 def test_roundtrip_type_mappings(client_modules, roundtrip_db: str) -> None:  # noqa: ANN001
@@ -268,11 +286,24 @@ def test_roundtrip_type_mappings(client_modules, roundtrip_db: str) -> None:  # 
     facade, _, _ = client_modules
     Mood = facade.Mood
     Point2D = facade.Point2D
+    ZCodecPayload = facade.ZCodecPayload
+    ACodecWrapper = facade.ACodecWrapper
 
     async def scenario() -> None:
         conn = await psycopg.AsyncConnection.connect(roundtrip_db, autocommit=True)
         try:
             await facade.register_types(conn)
+
+            codec_payload = ZCodecPayload(class_=41, pg_decode="scalar", pg_encode=None)
+            codec_payloads = [
+                ZCodecPayload(class_=42, pg_decode="first", pg_encode="encoded"),
+                ZCodecPayload(class_=43, pg_decode="second", pg_encode=None),
+            ]
+            codec_wrapper = ACodecWrapper(
+                payload=ZCodecPayload(class_=44, pg_decode="nested", pg_encode=None),
+                feeling=Mood.SAD,
+                note=None,
+            )
 
             inserted = await facade.insert_specimen(
                 conn,
@@ -301,6 +332,9 @@ def test_roundtrip_type_mappings(client_modules, roundtrip_db: str) -> None:  # 
                 related_ids=None,
                 grid=None,
                 moods=[Mood.HAPPY, None, Mood.SAD],
+                codec_payload=codec_payload,
+                codec_payloads=codec_payloads,
+                codec_wrapper=codec_wrapper,
             )
             assert type(inserted) is facade.InsertSpecimenRow
 
@@ -323,6 +357,20 @@ def test_roundtrip_type_mappings(client_modules, roundtrip_db: str) -> None:  # 
             assert inserted.moods is not None
             assert inserted.moods[0] is Mood.HAPPY
             assert inserted.moods[2] is Mood.SAD
+            assert type(inserted.codec_payload) is ZCodecPayload
+            assert inserted.codec_payload == codec_payload
+            assert inserted.codec_payload.class_ == 41
+            assert inserted.codec_payload.pg_decode == "scalar"
+            assert inserted.codec_payload.pg_encode is None
+            assert type(inserted.codec_payloads) is list
+            assert all(type(value) is ZCodecPayload for value in inserted.codec_payloads)
+            assert inserted.codec_payloads == codec_payloads
+            assert type(inserted.codec_wrapper) is ACodecWrapper
+            assert inserted.codec_wrapper is not None
+            assert type(inserted.codec_wrapper.payload) is ZCodecPayload
+            assert inserted.codec_wrapper == codec_wrapper
+            assert inserted.codec_wrapper.feeling is Mood.SAD
+            assert inserted.codec_wrapper.note is None
             # domain-backed columns map to their base Python types.
             assert inserted.label == "specimen"
             assert inserted.rev == 1
@@ -338,6 +386,14 @@ def test_roundtrip_type_mappings(client_modules, roundtrip_db: str) -> None:  # 
             assert isinstance(hit.feeling, Mood)
             assert isinstance(hit.origin, Point2D)
             assert hit.maybe_uuid is None
+            assert type(hit.codec_payload) is ZCodecPayload
+            assert hit.codec_payload == codec_payload
+            assert all(type(value) is ZCodecPayload for value in hit.codec_payloads)
+            assert type(hit.codec_wrapper) is ACodecWrapper
+            assert hit.codec_wrapper is not None
+            assert type(hit.codec_wrapper.payload) is ZCodecPayload
+            assert hit.codec_wrapper.feeling is Mood.SAD
+            assert hit.codec_wrapper.note is None
             miss = await facade.get_specimen(conn, id=specimen_id + 10_000)
             assert miss is None
 
@@ -403,19 +459,16 @@ def test_roundtrip_type_mappings(client_modules, roundtrip_db: str) -> None:  # 
     asyncio.run(scenario())
 
 
-def test_require_array_rejects_unregistered_enum_array(client_modules) -> None:  # noqa: ANN001
-    """require_array turns the unregistered enum-array form into a clear error.
-
-    Without register_types psycopg returns an enum array as the raw array text, not
-    a list; the generated enum-array decode wraps the value in require_array so it
-    fails loudly instead of iterating a string into bogus members.
-    """
+def test_custom_rows_keep_typed_passthrough_until_c3(client_modules) -> None:  # noqa: ANN001
     _, _, import_module = client_modules
-    runtime = import_module("specimen_client._generated._runtime")
+    statement = import_module("specimen_client._generated.statements.insert_specimen")
+    source = Path(statement.__file__).read_text()
 
-    assert runtime.require_array(["happy", "sad"]) == ["happy", "sad"]
-    with pytest.raises(RuntimeError, match="register_types"):
-        _ = runtime.require_array("{happy,sad}")
+    assert "def _decode_row" in source
+    assert '_cast(ZCodecPayload, row["codec_payload"])' in source
+    assert '_cast(list[ZCodecPayload | None], row["codec_payloads"])' in source
+    assert '.pg_decode(' not in source
+    assert '.pg_encode(' not in source
 
 
 def test_roundtrip_sync_surface(client_modules, roundtrip_db: str) -> None:  # noqa: ANN001
@@ -424,10 +477,23 @@ def test_roundtrip_sync_surface(client_modules, roundtrip_db: str) -> None:  # n
     _, facade, _ = client_modules
     Mood = facade.Mood
     Point2D = facade.Point2D
+    ZCodecPayload = facade.ZCodecPayload
+    ACodecWrapper = facade.ACodecWrapper
 
     conn = psycopg.connect(roundtrip_db, autocommit=True)
     try:
         facade.register_types(conn)
+
+        codec_payload = ZCodecPayload(class_=51, pg_decode="sync", pg_encode=None)
+        codec_payloads = [
+            ZCodecPayload(class_=52, pg_decode="first", pg_encode="encoded"),
+            ZCodecPayload(class_=53, pg_decode="second", pg_encode=None),
+        ]
+        codec_wrapper = ACodecWrapper(
+            payload=ZCodecPayload(class_=54, pg_decode="nested", pg_encode=None),
+            feeling=Mood.SAD,
+            note=None,
+        )
 
         inserted = facade.insert_specimen(
             conn,
@@ -456,6 +522,9 @@ def test_roundtrip_sync_surface(client_modules, roundtrip_db: str) -> None:  # n
             related_ids=None,
             grid=None,
             moods=[Mood.HAPPY, None, Mood.SAD],
+            codec_payload=codec_payload,
+            codec_payloads=codec_payloads,
+            codec_wrapper=codec_wrapper,
         )
         assert type(inserted) is facade.InsertSpecimenRow
         assert isinstance(inserted.feeling, Mood)
@@ -465,11 +534,28 @@ def test_roundtrip_sync_surface(client_modules, roundtrip_db: str) -> None:  # n
         assert inserted.moods == [Mood.HAPPY, None, Mood.SAD]
         assert inserted.moods is not None
         assert inserted.moods[0] is Mood.HAPPY
+        assert type(inserted.codec_payload) is ZCodecPayload
+        assert inserted.codec_payload == codec_payload
+        assert inserted.codec_payload.pg_encode is None
+        assert type(inserted.codec_payloads) is list
+        assert all(type(value) is ZCodecPayload for value in inserted.codec_payloads)
+        assert inserted.codec_payloads == codec_payloads
+        assert type(inserted.codec_wrapper) is ACodecWrapper
+        assert inserted.codec_wrapper is not None
+        assert type(inserted.codec_wrapper.payload) is ZCodecPayload
+        assert inserted.codec_wrapper.feeling is Mood.SAD
+        assert inserted.codec_wrapper.note is None
 
         specimen_id = inserted.id
         hit = facade.get_specimen(conn, id=specimen_id)
         assert hit is not None
         assert hit.id == specimen_id
+        assert type(hit.codec_payload) is ZCodecPayload
+        assert all(type(value) is ZCodecPayload for value in hit.codec_payloads)
+        assert type(hit.codec_wrapper) is ACodecWrapper
+        assert hit.codec_wrapper is not None
+        assert type(hit.codec_wrapper.payload) is ZCodecPayload
+        assert hit.codec_wrapper.feeling is Mood.SAD
         assert facade.get_specimen(conn, id=specimen_id + 10_000) is None
 
         mood_rows = facade.list_specimens_by_moods(conn, moods=[Mood.HAPPY])

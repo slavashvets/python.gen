@@ -171,7 +171,7 @@ jobs:
           set -euo pipefail
 
           mise x -- uv venv contract-shell/.venv
-          mise x -- uv pip install --python contract-shell/.venv/bin/python "psycopg[binary]>=3.2" basedpyright
+          mise x -- uv pip install --python contract-shell/.venv/bin/python "psycopg[binary]>=3.3,<4" basedpyright
 
       - name: basedpyright strict on the generated package
         shell: bash

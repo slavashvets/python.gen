@@ -11,7 +11,7 @@ INSERT INTO specimen (
   doc_json, doc_jsonb,
   maybe_text, maybe_int, maybe_uuid, maybe_ts, maybe_num,
   tags, related_ids, grid,
-  feeling, moods, origin,
+  feeling, moods, origin, codec_payload, codec_payloads, codec_wrapper,
   label, rev, meta
 )
 VALUES (
@@ -20,7 +20,7 @@ VALUES (
   $doc_json::json, $doc_jsonb::jsonb,
   $maybe_text, $maybe_int, $maybe_uuid, $maybe_ts, $maybe_num,
   $tags, $related_ids, $grid,
-  $feeling, $moods::mood[], $origin,
+  $feeling, $moods::mood[], $origin, $codec_payload, $codec_payloads, $codec_wrapper,
   'specimen', 1, '{}'::jsonb
 )
 RETURNING
@@ -30,5 +30,5 @@ RETURNING
   doc_json, doc_jsonb,
   maybe_text, maybe_int, maybe_uuid, maybe_ts, maybe_num,
   tags, related_ids, grid,
-  feeling, moods, origin,
+  feeling, moods, origin, codec_payload, codec_payloads, codec_wrapper,
   label, rev, meta

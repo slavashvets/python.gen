@@ -4,8 +4,12 @@
 
 from dataclasses import dataclass
 
+from .mood import Mood
+from .z_codec_payload import ZCodecPayload
+
 
 @dataclass(frozen=True, slots=True)
-class Point2D:
-    x: float | None
-    y: float | None
+class ACodecWrapper:
+    payload: ZCodecPayload | None
+    feeling: Mood | None
+    note: str | None

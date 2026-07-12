@@ -145,34 +145,94 @@ let buildLookup =
           )
           (\(_ : Model.Name) -> CustomKind.TypeKind.Absent)
 
--- Schema-qualified type names for psycopg CompositeInfo.fetch (search-path
--- safe). Reads CustomTypeGen.Output (already a combineOutputs parameter, and
--- already the post-Skip-filter surviving set), not Model.CustomType, so
--- there is no second List Model.CustomType parameter to thread through.
-let compositePgNames =
+let sameOrder =
+      \(left : Natural) ->
+      \(right : Natural) ->
+        Natural/isZero (Natural/subtract left right)
+        && Natural/isZero (Natural/subtract right left)
+
+let containsOrder =
+      \(order : Natural) ->
       \(customTypes : List CustomTypeGen.Output) ->
-        Prelude.List.map
+        Prelude.List.any
           CustomTypeGen.Output
-          Text
-          (\(ct : CustomTypeGen.Output) -> "${ct.pgSchema}.${ct.pgName}")
-          ( Prelude.List.filter
-              CustomTypeGen.Output
-              (\(ct : CustomTypeGen.Output) -> merge { Composite = True, Enum = False } ct.kind)
-              customTypes
+          (\(custom : CustomTypeGen.Output) -> sameOrder order custom.order)
+          customTypes
+
+let dependenciesReady =
+      \(emitted : List CustomTypeGen.Output) ->
+      \(custom : CustomTypeGen.Output) ->
+        Prelude.Bool.not
+          ( Prelude.List.any
+              Natural
+              (\(dependency : Natural) -> Prelude.Bool.not (containsOrder dependency emitted))
+              custom.dependencies
           )
 
--- Enum TypeInfos are registered too so enum arrays parse (see RegisterModule).
-let enumPgNames =
+let RegistrationState =
+      { emitted : List CustomTypeGen.Output
+      , remaining : List CustomTypeGen.Output
+      }
+
+let registrationOrder =
       \(customTypes : List CustomTypeGen.Output) ->
-        Prelude.List.map
-          CustomTypeGen.Output
-          Text
-          (\(ct : CustomTypeGen.Output) -> "${ct.pgSchema}.${ct.pgName}")
-          ( Prelude.List.filter
-              CustomTypeGen.Output
-              (\(ct : CustomTypeGen.Output) -> merge { Composite = False, Enum = True } ct.kind)
-              customTypes
-          )
+        let enums =
+              Prelude.List.filter
+                CustomTypeGen.Output
+                ( \(custom : CustomTypeGen.Output) ->
+                    merge { Enum = True, Composite = False } custom.kind
+                )
+                customTypes
+
+        let composites =
+              Prelude.List.filter
+                CustomTypeGen.Output
+                ( \(custom : CustomTypeGen.Output) ->
+                    merge { Enum = False, Composite = True } custom.kind
+                )
+                customTypes
+
+        let pass =
+              \(state : RegistrationState) ->
+                let ready =
+                      Prelude.List.filter
+                        CustomTypeGen.Output
+                        (dependenciesReady state.emitted)
+                        state.remaining
+
+                let blocked =
+                      Prelude.List.filter
+                        CustomTypeGen.Output
+                        ( \(custom : CustomTypeGen.Output) ->
+                            Prelude.Bool.not
+                              (dependenciesReady state.emitted custom)
+                        )
+                        state.remaining
+
+                in  { emitted = state.emitted # ready, remaining = blocked }
+
+        let ordered =
+              Natural/fold
+                (Prelude.List.length CustomTypeGen.Output customTypes)
+                RegistrationState
+                pass
+                { emitted = enums, remaining = composites }
+
+        let unresolved =
+              Prelude.Text.concatMapSep
+                ", "
+                CustomTypeGen.Output
+                ( \(custom : CustomTypeGen.Output) ->
+                    "${custom.pgSchema}.${custom.pgName}"
+                )
+                ordered.remaining
+
+        in  if Prelude.List.null CustomTypeGen.Output ordered.remaining
+            then  Lude.Compiled.ok (List CustomTypeGen.Output) ordered.emitted
+            else  Lude.Compiled.report
+                    (List CustomTypeGen.Output)
+                    [ "register_types" ]
+                    "Unresolved or cyclic custom type dependencies: ${unresolved}"
 
 let combineOutputs =
       \(config : ResolvedConfig) ->
@@ -187,6 +247,9 @@ let combineOutputs =
       -- entries are built from this, not input.customTypes, so a skipped
       -- type leaves no dangling export.
       \(customTypes : List CustomTypeGen.Output) ->
+      -- Same compiled custom types in dependency-first order, used only by the
+      -- shared register module. File and facade order remains project order.
+      \(registrationTypes : List CustomTypeGen.Output) ->
         -- The generator emits the _generated subtree plus the package-root
         -- __init__.py facade. The rest of the shell (pyproject.toml, py.typed) is
         -- hand-written and committed once, never overwritten by generation.
@@ -284,25 +347,30 @@ let combineOutputs =
                       }
                     ]
 
-        let compositeNames = compositePgNames customTypes
-
-        let enumNames = enumPgNames customTypes
-
         let hasCustomRegistration =
               Prelude.Bool.not
-                ( Prelude.Bool.and
-                    [ Prelude.List.null Text compositeNames
-                    , Prelude.List.null Text enumNames
-                    ]
+                (Prelude.List.null CustomTypeGen.Output registrationTypes)
+
+        let registrationEntries =
+              Prelude.List.map
+                CustomTypeGen.Output
+                RegisterModule.CustomType
+                ( \(custom : CustomTypeGen.Output) ->
+                    { typeName = custom.typeName
+                    , moduleName = custom.moduleName
+                    , pgSchema = custom.pgSchema
+                    , pgName = custom.pgName
+                    , kind = custom.kind
+                    }
                 )
+                registrationTypes
 
         let registerFiles =
               if    hasCustomRegistration
               then  [ { path = srcPrefix ++ "_register.py"
                       , content =
                           RegisterModule.run
-                            { compositeNames
-                            , enumNames
+                            { customTypes = registrationEntries
                             , emitSync = config.emitSync
                             }
                       }
@@ -415,25 +483,23 @@ let run =
 
         let skip = merge { Fail = False, Skip = True } resolvedConfig.onUnsupported
 
-        let rawLookup = buildLookup input.customTypes
-
-        let typeSucceeds
-            : Model.CustomType -> Bool
-            = \(ct : Model.CustomType) ->
+        let typeSucceedsWith =
+              \(candidateLookup : CustomKind.Lookup) ->
+              \(ct : Model.CustomType) ->
                 merge
                   { Ok =
                       \(_ : { value : CustomTypeGen.Output, warnings : List Report }) ->
                         True
                   , Err = \(_ : Report) -> False
                   }
-                  (CustomTypeGen.run resolvedConfig rawLookup ct)
+                  (CustomTypeGen.run resolvedConfig candidateLookup ct)
 
         -- Nested under the type's own name so the warning names the type
         -- that failed, not just the inner member/column that triggered it
         -- (CustomType.run itself does not).
-        let typeWarning
-            : Model.CustomType -> Optional Report
-            = \(ct : Model.CustomType) ->
+        let typeWarningWith =
+              \(candidateLookup : CustomKind.Lookup) ->
+              \(ct : Model.CustomType) ->
                 merge
                   { Ok =
                       \(_ : { value : CustomTypeGen.Output, warnings : List Report }) ->
@@ -441,17 +507,26 @@ let run =
                   , Err =
                       \(err : Report) -> Some { path = [ ct.name.inSnakeCase ] # err.path, message = err.message }
                   }
-                  (CustomTypeGen.run resolvedConfig rawLookup ct)
+                  (CustomTypeGen.run resolvedConfig candidateLookup ct)
 
-        -- A skipped custom type resolves to Absent for any query that
-        -- references it, and that query's own Member/ParamsMember
-        -- resolution fails with "Custom type not found" -- caught the same
-        -- way any other unsupported shape is, cascading the skip onto every
-        -- dependent query.
+        -- Nested custom support requires transitive closure: after one type is
+        -- removed, composites depending on it must be reconsidered against the
+        -- smaller lookup. Each bounded pass can only remove survivors.
         let effectiveCustomTypes
             : List Model.CustomType
             = if    skip
-              then  Prelude.List.filter Model.CustomType typeSucceeds input.customTypes
+              then  Natural/fold
+                      (Prelude.List.length Model.CustomType input.customTypes)
+                      (List Model.CustomType)
+                      ( \(survivors : List Model.CustomType) ->
+                          let candidateLookup = buildLookup survivors
+
+                          in  Prelude.List.filter
+                                Model.CustomType
+                                (typeSucceedsWith candidateLookup)
+                                survivors
+                      )
+                      input.customTypes
               else  input.customTypes
 
         let lookup = buildLookup effectiveCustomTypes
@@ -506,12 +581,25 @@ let run =
                 )
                 effectiveQueries
 
+        let registrationTypesForCombine
+            : Lude.Compiled.Type (List CustomTypeGen.Output)
+            = Lude.Compiled.flatMap
+                (List CustomTypeGen.Output)
+                (List CustomTypeGen.Output)
+                registrationOrder
+                typesForCombine
+
         let skipWarnings
             : List Report
             = if    skip
               then    Prelude.List.unpackOptionals
                         Report
-                        (Prelude.List.map Model.CustomType (Optional Report) typeWarning input.customTypes)
+                        ( Prelude.List.map
+                            Model.CustomType
+                            (Optional Report)
+                            (typeWarningWith lookup)
+                            input.customTypes
+                        )
                     # Prelude.List.unpackOptionals
                         Report
                         (Prelude.List.map QueryCheck (Optional Report) (\(qc : QueryCheck) -> qc.warning) queryChecks)
@@ -519,13 +607,15 @@ let run =
 
         let combined
             : Lude.Compiled.Type Output
-            = Lude.Compiled.map2
+            = Lude.Compiled.map3
                 (List QueryGen.Output)
+                (List CustomTypeGen.Output)
                 (List CustomTypeGen.Output)
                 Output
                 (combineOutputs resolvedConfig input)
                 queriesForCombine
                 typesForCombine
+                registrationTypesForCombine
 
         in  Lude.Compiled.appendWarnings Output skipWarnings combined
 

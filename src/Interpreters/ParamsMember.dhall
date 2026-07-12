@@ -272,24 +272,10 @@ let run =
                                   , order
                                   }
 
-                          let scalarEncode =
-                                if    input.isNullable
-                                then  "None if ${fieldName} is None else ${fieldName}.pg_encode()"
-                                else  "${fieldName}.pg_encode()"
+                          let dimsAtMostTwo =
+                                Natural/isZero (Natural/subtract 2 value.dims)
 
-                          let arrayElemEncode =
-                                if    value.elementIsNullable
-                                then  "None if x is None else x.pg_encode()"
-                                else  "x.pg_encode()"
-
-                          let arrayEncode =
-                                let base = "[${arrayElemEncode} for x in ${fieldName}]"
-
-                                in  if    input.isNullable
-                                    then  "None if ${fieldName} is None else ${base}"
-                                    else  base
-
-                          let dimsIsOne =
+                          let dimsAtMostOne =
                                 Natural/isZero (Natural/subtract 1 value.dims)
 
                           in  merge
@@ -299,7 +285,7 @@ let run =
                                             ImportSet.customEnum
                                               (customImport order)
 
-                                      in  if Natural/isZero value.dims
+                                      in  if dimsAtMostTwo
                                           then  Lude.Compiled.ok
                                                   Output
                                                   ( mkOutput
@@ -307,24 +293,14 @@ let run =
                                                           value.imports
                                                           enumImport
                                                       )
-                                                      scalarEncode
-                                                  )
-                                          else  if dimsIsOne
-                                          then  Lude.Compiled.ok
-                                                  Output
-                                                  ( mkOutput
-                                                      ( ImportSet.combine
-                                                          value.imports
-                                                          enumImport
-                                                      )
-                                                      arrayEncode
+                                                      fieldName
                                                   )
                                           else  Lude.Compiled.report
                                                   Output
                                                   [ input.pgName
                                                   , name.inSnakeCase
                                                   ]
-                                                  "Array of an enum parameter with dimensionality > 1 is not supported"
+                                                  "Array of an enum parameter with dimensionality > 2 is not supported"
                                 , Composite =
                                     \ ( composite
                                       : { fields :
@@ -332,7 +308,7 @@ let run =
                                         , order : Natural
                                         }
                                       ) ->
-                                      if Natural/isZero value.dims
+                                      if dimsAtMostOne
                                       then  Lude.Compiled.ok
                                               Output
                                               ( mkOutput
@@ -342,12 +318,12 @@ let run =
                                                           (customImport composite.order)
                                                       )
                                                   )
-                                                  scalarEncode
+                                                  fieldName
                                               )
                                       else  Lude.Compiled.report
                                               Output
                                               [ input.pgName, name.inSnakeCase ]
-                                              "Array of a composite type as a parameter is not supported"
+                                              "Array of a composite type parameter with dimensionality > 1 is not supported"
                                 , Absent =
                                     Lude.Compiled.report
                                       Output

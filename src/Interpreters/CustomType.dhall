@@ -27,11 +27,6 @@ let Input = Model.CustomType
 
 let TypeKind = < Enum | Composite >
 
--- moduleName/pgSchema/pgName mirror the input Name/CustomType so Project.dhall's
--- combineOutputs can derive the facade export, types/__init__ export, and the
--- composite/enum registration name from this Output alone (the surviving list
--- after Skip filtering), without a second, separately-threaded List
--- Model.CustomType parameter.
 let Output =
       { modulePath : Text
       , moduleContent : Text
@@ -40,11 +35,10 @@ let Output =
       , pgSchema : Text
       , pgName : Text
       , kind : TypeKind
+      , order : Natural
+      , dependencies : List Natural
       }
 
--- Render the stdlib/runtime imports a composite field type needs, in a fixed
--- order so output stays byte-stable. Reads only the standard flags; nested custom
--- types are out of Wave 2 scope (no composite in the corpus references one).
 let renderExtraImports =
       \(imports : ImportSet.Type) ->
         let datetimeNames =
@@ -60,6 +54,15 @@ let renderExtraImports =
                                                 ", "
                                                 datetimeNames}" ]
 
+        let customLines =
+              Prelude.List.map
+                ImportSet.CustomImport
+                Text
+                ( \(custom : ImportSet.CustomImport) ->
+                    "from .${custom.moduleName} import ${custom.className}"
+                )
+                (ImportSet.sortedCustoms imports)
+
         in    (if imports.uuid then [ "from uuid import UUID" ] else [] : List Text)
             # datetimeLine
             # ( if    imports.decimal
@@ -67,9 +70,10 @@ let renderExtraImports =
                 else  [] : List Text
               )
             # ( if    imports.jsonValue
-                then  [ "from .._runtime import JsonValue" ]
+                then  [ "from .._core import JsonValue" ]
                 else  [] : List Text
               )
+            # customLines
 
 let run =
       \(config : Config) ->
@@ -95,18 +99,42 @@ let run =
                             )
                             variants
 
-                    in  Lude.Compiled.ok
-                          Output
-                          { modulePath
-                          , moduleContent =
-                              EnumModule.run
-                                { typeName, variants = templateVariants }
-                          , typeName
-                          , moduleName
-                          , pgSchema = input.pgSchema
-                          , pgName = input.pgName
-                          , kind = TypeKind.Enum
+                    in  merge
+                          { Enum =
+                              \(order : Natural) ->
+                                Lude.Compiled.ok
+                                  Output
+                                  { modulePath
+                                  , moduleContent =
+                                      EnumModule.run
+                                        { typeName
+                                        , variants = templateVariants
+                                        }
+                                  , typeName
+                                  , moduleName
+                                  , pgSchema = input.pgSchema
+                                  , pgName = input.pgName
+                                  , kind = TypeKind.Enum
+                                  , order
+                                  , dependencies = [] : List Natural
+                                  }
+                          , Composite =
+                              \ ( _
+                                : { fields : List CustomKind.CompositeField
+                                  , order : Natural
+                                  }
+                                ) ->
+                                Lude.Compiled.report
+                                  Output
+                                  [ input.pgName ]
+                                  "Custom type lookup kind is inconsistent with enum definition"
+                          , Absent =
+                              Lude.Compiled.report
+                                Output
+                                [ input.pgName ]
+                                "Custom type not found in project customTypes"
                           }
+                          (lookup input.name)
               , Composite =
                   \(members : List Model.Member) ->
                     let compiledMembers
@@ -121,10 +149,17 @@ let run =
                                         MemberGen.run config lookup m
                                   , Custom =
                                       \(name : Model.Name) ->
-                                        Lude.Compiled.report
-                                          MemberGen.Output
-                                          [ m.pgName, name.inSnakeCase ]
-                                          "Nested custom type members are not supported before PostgreSQL adapter verification"
+                                        Prelude.Optional.fold
+                                          Model.ArraySettings
+                                          m.value.arraySettings
+                                          (Lude.Compiled.Type MemberGen.Output)
+                                          ( \(_ : Model.ArraySettings) ->
+                                              Lude.Compiled.report
+                                                MemberGen.Output
+                                                [ m.pgName, name.inSnakeCase ]
+                                                "Custom array fields inside a composite type are not supported"
+                                          )
+                                          (MemberGen.run config lookup m)
                                   }
                                   m.value.scalar
                             )
@@ -154,22 +189,57 @@ let run =
                                     )
                                     memberOutputs
 
-                            in  { modulePath
-                                , moduleContent =
-                                    CompositeModule.run
-                                      { typeName
-                                      , extraImports =
-                                          renderExtraImports combinedImports
-                                      , fields
-                                      }
-                                , typeName
-                                , moduleName
-                                , pgSchema = input.pgSchema
-                                , pgName = input.pgName
-                                , kind = TypeKind.Composite
-                                }
+                            let dependencies =
+                                  Prelude.List.map
+                                    ImportSet.CustomImport
+                                    Natural
+                                    ( \(custom : ImportSet.CustomImport) ->
+                                        custom.dedupKey
+                                    )
+                                    (ImportSet.sortedCustoms combinedImports)
 
-                    in  Lude.Compiled.map
+                            in  merge
+                                  { Composite =
+                                      \ ( composite
+                                        : { fields :
+                                              List CustomKind.CompositeField
+                                          , order : Natural
+                                          }
+                                        ) ->
+                                        Lude.Compiled.ok
+                                          Output
+                                          { modulePath
+                                          , moduleContent =
+                                              CompositeModule.run
+                                                { typeName
+                                                , extraImports =
+                                                    renderExtraImports
+                                                      combinedImports
+                                                , fields
+                                                }
+                                          , typeName
+                                          , moduleName
+                                          , pgSchema = input.pgSchema
+                                          , pgName = input.pgName
+                                          , kind = TypeKind.Composite
+                                          , order = composite.order
+                                          , dependencies
+                                          }
+                                  , Enum =
+                                      \(_ : Natural) ->
+                                        Lude.Compiled.report
+                                          Output
+                                          [ input.pgName ]
+                                          "Custom type lookup kind is inconsistent with composite definition"
+                                  , Absent =
+                                      Lude.Compiled.report
+                                        Output
+                                        [ input.pgName ]
+                                        "Custom type not found in project customTypes"
+                                  }
+                                  (lookup input.name)
+
+                    in  Lude.Compiled.flatMap
                           (List MemberGen.Output)
                           Output
                           assemble

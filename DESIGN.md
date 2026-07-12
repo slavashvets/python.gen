@@ -13,7 +13,7 @@ output paths either way.
 
 Constraints that bound every decision below:
 
-- Generated code depends ONLY on `psycopg>=3.2` and the stdlib. No pydantic,
+- Generated code depends ONLY on `psycopg>=3.3,<4` and the stdlib. No pydantic,
   no third-party codec library.
 - Generated code passes `basedpyright` strict with zero errors/warnings and
   `ruff` clean.
@@ -726,7 +726,7 @@ application code, not anywhere near `_generated`.
 
 ## 16. Deliberate driver scope
 
-psycopg `>=3.2` is the target and the only supported driver. The runtime
+psycopg `>=3.3,<4` is the target and the only supported driver. The runtime
 helpers, the `dict_row` factory, `Jsonb` wrapping, `CompositeInfo`/`TypeInfo`
 registration, and the `AsyncConnection`/`Connection` split are all
 psycopg-specific by design. Abstracting over other drivers (asyncpg, a

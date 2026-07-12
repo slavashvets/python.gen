@@ -1,0 +1,10 @@
+composite:
+  class:
+    type: int8
+    not_null: false
+  pg_decode:
+    type: text
+    not_null: false
+  pg_encode:
+    type: text
+    not_null: false

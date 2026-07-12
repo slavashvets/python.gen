@@ -6,6 +6,7 @@ from dataclasses import dataclass
 
 
 @dataclass(frozen=True, slots=True)
-class Point2D:
-    x: float | None
-    y: float | None
+class ZCodecPayload:
+    class_: int | None
+    pg_decode: str | None
+    pg_encode: str | None

@@ -35,28 +35,12 @@ let run =
                 )
                 params.variants
 
-        -- pg_decode/pg_encode, not decode/encode or _decode/_encode: see
-        -- CompositeModule.dhall's codecMethods comment. The `pg_` prefix
-        -- matters here specifically — this class subclasses StrEnum, so a
-        -- plain `encode` would override `str.encode`'s incompatible
-        -- signature (reportIncompatibleMethodOverride).
-        let codecMethods =
-                "\n"
-              ++ "    @staticmethod\n"
-              ++ "    def pg_decode(src: object) -> \"${params.typeName}\":\n"
-              ++ "        return ${params.typeName}(cast(str, src))\n"
-              ++ "\n"
-              ++ "    def pg_encode(self) -> \"${params.typeName}\":\n"
-              ++ "        return self"
-
         in  ''
             from enum import StrEnum
-            from typing import cast
 
 
             class ${params.typeName}(StrEnum):
             ${memberLines}
-            ${codecMethods}
             ''
 
 in  Sdk.Sigs.template Params run /\ { Variant }

@@ -239,54 +239,54 @@ in  Sdk.Sigs.generator Config Config/default run
             id="missing-custom",
         ),
         pytest.param(
-            "nested_custom",
+            "custom_array_member",
             "CustomType",
-            "enum",
-            0,
+            "composite",
+            1,
             True,
-            "Nested custom type members are not supported before PostgreSQL adapter verification",
+            "Custom array fields inside a composite type are not supported",
             ("fixture", "probe_value"),
-            id="nested-custom-member",
+            id="custom-array-member",
         ),
         pytest.param(
-            "composite_array_result",
+            "composite_rank_two_result",
             "Member",
             "composite",
-            1,
+            2,
             False,
-            "Array of a composite type is not supported (element-wise decode is unimplemented)",
+            "Array of a composite type with dimensionality > 1 is not supported",
             ("fixture", "probe_value"),
-            id="composite-array-result",
+            id="composite-rank-two-result",
         ),
         pytest.param(
-            "composite_array_parameter",
+            "composite_rank_two_parameter",
             "ParamsMember",
             "composite",
-            1,
+            2,
             False,
-            "Array of a composite type as a parameter is not supported",
+            "Array of a composite type parameter with dimensionality > 1 is not supported",
             ("fixture", "probe_value"),
-            id="composite-array-parameter",
+            id="composite-rank-two-parameter",
         ),
         pytest.param(
-            "enum_rank_two_result",
+            "enum_rank_three_result",
             "Member",
             "enum",
-            2,
+            3,
             False,
-            "Array of an enum with dimensionality > 1 is not supported",
+            "Array of an enum with dimensionality > 2 is not supported",
             ("fixture", "probe_value"),
-            id="enum-rank-two-result",
+            id="enum-rank-three-result",
         ),
         pytest.param(
-            "enum_rank_two_parameter",
+            "enum_rank_three_parameter",
             "ParamsMember",
             "enum",
-            2,
+            3,
             False,
-            "Array of an enum parameter with dimensionality > 1 is not supported",
+            "Array of an enum parameter with dimensionality > 2 is not supported",
             ("fixture", "probe_value"),
-            id="enum-rank-two-parameter",
+            id="enum-rank-three-parameter",
         ),
     ],
 )
@@ -331,6 +331,63 @@ def test_custom_shape_contracts_fail_loudly(
     assert rendered_path == path_tokens, f"expected exact path {path_tokens}, got {rendered_path}:\n{plain}"
 
 
+@pytest.mark.parametrize(
+    ("case_id", "interpreter", "lookup_kind", "dimensionality", "nested"),
+    [
+        pytest.param("nested_scalar", "CustomType", "composite", 0, True, id="nested-scalar"),
+        pytest.param("enum_rank_two_result", "Member", "enum", 2, False, id="enum-rank-two-result"),
+        pytest.param(
+            "enum_rank_two_parameter",
+            "ParamsMember",
+            "enum",
+            2,
+            False,
+            id="enum-rank-two-parameter",
+        ),
+        pytest.param(
+            "composite_array_result",
+            "Member",
+            "composite",
+            1,
+            False,
+            id="composite-array-result",
+        ),
+        pytest.param(
+            "composite_array_parameter",
+            "ParamsMember",
+            "composite",
+            1,
+            False,
+            id="composite-array-parameter",
+        ),
+    ],
+)
+def test_custom_shape_contracts_succeed(
+    pgn_bin: str,
+    pgn_admin_url: str,
+    tmp_path: Path,
+    case_id: str,
+    interpreter: str,
+    lookup_kind: str,
+    dimensionality: int,
+    nested: bool,
+) -> None:
+    root, project = _fresh_project(tmp_path)
+    for query_file in (project / "queries").iterdir():
+        query_file.unlink()
+    _write_contract_probe(
+        root,
+        interpreter=interpreter,
+        lookup_kind=lookup_kind,
+        dimensionality=dimensionality,
+        nested=nested,
+    )
+    _write_single_artifact(project, "../../src/contract-probe.dhall", f"probe-{case_id}")
+
+    result = run_pgn(pgn_bin, pgn_admin_url, project, "generate")
+    assert result.returncode == 0, f"expected {case_id} to succeed:\n{_combined_output(result)}"
+
+
 def test_skip_unsupported_drops_offending_units_and_cascades(
     pgn_bin: str, pgn_admin_url: str, tmp_path: Path
 ) -> None:
@@ -338,12 +395,10 @@ def test_skip_unsupported_drops_offending_units_and_cascades(
 
     Three independent failures in one project: a money result column and a
     jsonb[] param each doom their own statement (Primitive.dhall / ParamsMember
-    .dhall); a composite nesting another composite dooms the custom type
-    itself (CustomType.dhall rejects nested custom members directly) and,
-    because the lookup rebuilt from the surviving types resolves it to Absent,
-    the query selecting that composite column
-    cascades into a skip too. Generation must still succeed, the surviving
-    statements and all 3 fixture types must be unaffected, no generated file
+    .dhall); a composite containing a custom array dooms that type, its scalar
+    custom parent, its grandparent, and the dependent query through the bounded
+    survivor closure. Generation must still succeed, the surviving statements
+    and all 5 fixture types must be unaffected, no generated file
     may reference a skipped name, the package must still import, and
     basedpyright strict must still pass on the result -- the same gate the
     golden package is held to.
@@ -372,14 +427,21 @@ def test_skip_unsupported_drops_offending_units_and_cascades(
         "SELECT 'happy'::mood AS feeling\n"
     )
     _ = (project / "migrations" / "2.sql").write_text(
-        "create type wrapped_point as (\n"
-        "  label text,\n"
-        "  origin point2d\n"
+        "create type z_bad_leaf as (\n"
+        "  feelings mood[]\n"
+        ");\n"
+        "\n"
+        "create type m_bad_parent as (\n"
+        "  leaf z_bad_leaf\n"
+        ");\n"
+        "\n"
+        "create type a_bad_grandparent as (\n"
+        "  parent m_bad_parent\n"
         ");\n"
         "\n"
         "create table nested_probe (\n"
         "  id      int8 primary key generated always as identity,\n"
-        "  wrapped wrapped_point not null\n"
+        "  wrapped a_bad_grandparent not null\n"
         ");\n"
     )
     _ = (project / "queries" / "probe_nested_composite.sql").write_text(
@@ -396,7 +458,7 @@ def test_skip_unsupported_drops_offending_units_and_cascades(
     for marker in (
         "unsupported type",
         "json/jsonb array as a parameter is not supported",
-        "nested custom type members are not supported before postgresql adapter verification",
+        "custom array fields inside a composite type are not supported",
         "custom type not found in project customtypes",
     ):
         assert marker in combined, f"expected pgn to surface the warning, {marker!r} missing from output"
@@ -408,11 +470,12 @@ def test_skip_unsupported_drops_offending_units_and_cascades(
 
     for name in ("probe_unsupported", "probe_json_array", "probe_nested_composite"):
         assert not (src / "statements" / f"{name}.py").exists(), f"{name} should have been skipped"
-    assert not (src / "types" / "wrapped_point.py").exists(), "wrapped_point should have been skipped"
+    for name in ("z_bad_leaf", "m_bad_parent", "a_bad_grandparent"):
+        assert not (src / "types" / f"{name}.py").exists(), f"{name} should have been skipped"
 
     for name in kept_statements + ["probe_custom_only"]:
         assert (src / "statements" / f"{name}.py").is_file(), f"{name} should not have been skipped"
-    for name in ("mood", "point_2_d", "tag_value"):
+    for name in ("a_codec_wrapper", "mood", "point_2_d", "tag_value", "z_codec_payload"):
         assert (src / "types" / f"{name}.py").is_file(), f"{name} should not have been skipped"
 
     generated_python = {path: path.read_text() for path in package_src.rglob("*.py")}
@@ -420,8 +483,12 @@ def test_skip_unsupported_drops_offending_units_and_cascades(
         "probe_unsupported",
         "probe_json_array",
         "probe_nested_composite",
-        "wrapped_point",
-        "WrappedPoint",
+        "z_bad_leaf",
+        "ZBadLeaf",
+        "m_bad_parent",
+        "MBadParent",
+        "a_bad_grandparent",
+        "ABadGrandparent",
     ):
         assert not any(orphan in text for text in generated_python.values()), (
             f"surviving generated output references skipped {orphan}"
@@ -429,7 +496,7 @@ def test_skip_unsupported_drops_offending_units_and_cascades(
 
     custom_only = (src / "statements" / "probe_custom_only.py").read_text()
     assert "from ..types.mood import Mood" in custom_only
-    assert "from typing import cast" not in custom_only
+    assert "from typing import cast as _cast" in custom_only
 
     src_root = str(generated / "src")
     sys.path.insert(0, src_root)
@@ -478,8 +545,10 @@ def test_custom_imports_are_unique_and_deterministic() -> None:
 
     insert_imports = custom_import.findall((statements / "insert_specimen.py").read_text())
     assert insert_imports == [
+        "from ..types.a_codec_wrapper import ACodecWrapper",
         "from ..types.mood import Mood",
         "from ..types.point_2_d import Point2D",
+        "from ..types.z_codec_payload import ZCodecPayload",
     ]
     for module in statements.glob("*.py"):
         imports = custom_import.findall(module.read_text())

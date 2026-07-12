@@ -4,36 +4,165 @@
 
 from __future__ import annotations
 
+import keyword
+from collections.abc import Callable, Sequence
+from dataclasses import fields, is_dataclass
+from typing import Any, TypeVar
+
 from psycopg import AsyncConnection, Connection
-from psycopg.types import TypeInfo
 from psycopg.types.composite import CompositeInfo, register_composite
+from psycopg.types.enum import EnumInfo, register_enum
 
 
-_COMPOSITE_TYPES = ("public.point2d", "public.tag_value",)
-_ENUM_TYPES = ("public.mood",)
+from .types.mood import Mood
+from .types.point_2_d import Point2D
+from .types.tag_value import TagValue
+from .types.z_codec_payload import ZCodecPayload
+from .types.a_codec_wrapper import ACodecWrapper
+
+
+_T = TypeVar("_T")
+_ObjectMaker = Callable[[Sequence[Any], CompositeInfo], _T]
+_SequenceMaker = Callable[[_T, CompositeInfo], Sequence[Any]]
+
+
+def _python_name(name: str) -> str:
+    if keyword.iskeyword(name):
+        return f"{name}_"
+    return name
+
+
+def _dataclass_callbacks(cls: type[_T]) -> tuple[_ObjectMaker[_T], _SequenceMaker[_T]]:
+    if not is_dataclass(cls):
+        raise TypeError(f"{cls.__name__} must be a dataclass")
+
+    model_fields = fields(cls)
+    model_names = tuple(field.name for field in model_fields)
+
+    def make_object(values: Sequence[Any], info: CompositeInfo) -> _T:
+        names = tuple(_python_name(name) for name in info.field_names)
+        assert names == model_names
+        assert len(values) == len(model_fields)
+        return cls(**dict(zip(names, values, strict=True)))
+
+    def make_sequence(obj: _T, info: CompositeInfo) -> Sequence[Any]:
+        names = tuple(_python_name(name) for name in info.field_names)
+        assert names == model_names
+        return tuple(getattr(obj, field.name) for field in model_fields)
+
+    return make_object, make_sequence
+
+
+
+_mood_pg_name = "public.mood"
+_point_2_d_pg_name = "public.point2d"
+_point_2_d_make_object, _point_2_d_make_sequence = _dataclass_callbacks(Point2D)
+_tag_value_pg_name = "public.tag_value"
+_tag_value_make_object, _tag_value_make_sequence = _dataclass_callbacks(TagValue)
+_z_codec_payload_pg_name = "public.z_codec_payload"
+_z_codec_payload_make_object, _z_codec_payload_make_sequence = _dataclass_callbacks(ZCodecPayload)
+_a_codec_wrapper_pg_name = "public.a_codec_wrapper"
+_a_codec_wrapper_make_object, _a_codec_wrapper_make_sequence = _dataclass_callbacks(ACodecWrapper)
 
 
 async def register_types(conn: AsyncConnection[object]) -> None:
-    for name in _COMPOSITE_TYPES:
-        composite_info = await CompositeInfo.fetch(conn, name)
-        if composite_info is None:
-            raise LookupError(f"composite type {name!r} not found; cannot register it")
-        register_composite(composite_info, conn)
-    for name in _ENUM_TYPES:
-        enum_info = await TypeInfo.fetch(conn, name)
-        if enum_info is None:
-            raise LookupError(f"enum type {name!r} not found; cannot register it")
-        enum_info.register(conn)
-
+    mood_info = await EnumInfo.fetch(conn, _mood_pg_name)
+    if mood_info is None:
+        raise LookupError(f"enum type {_mood_pg_name!r} not found; cannot register it")
+    register_enum(
+        mood_info,
+        conn,
+        Mood,
+        mapping={member: member.value for member in Mood},
+    )
+    point_2_d_info = await CompositeInfo.fetch(conn, _point_2_d_pg_name)
+    if point_2_d_info is None:
+        raise LookupError(f"composite type {_point_2_d_pg_name!r} not found; cannot register it")
+    register_composite(
+        point_2_d_info,
+        conn,
+        Point2D,
+        make_object=_point_2_d_make_object,
+        make_sequence=_point_2_d_make_sequence,
+    )
+    tag_value_info = await CompositeInfo.fetch(conn, _tag_value_pg_name)
+    if tag_value_info is None:
+        raise LookupError(f"composite type {_tag_value_pg_name!r} not found; cannot register it")
+    register_composite(
+        tag_value_info,
+        conn,
+        TagValue,
+        make_object=_tag_value_make_object,
+        make_sequence=_tag_value_make_sequence,
+    )
+    z_codec_payload_info = await CompositeInfo.fetch(conn, _z_codec_payload_pg_name)
+    if z_codec_payload_info is None:
+        raise LookupError(f"composite type {_z_codec_payload_pg_name!r} not found; cannot register it")
+    register_composite(
+        z_codec_payload_info,
+        conn,
+        ZCodecPayload,
+        make_object=_z_codec_payload_make_object,
+        make_sequence=_z_codec_payload_make_sequence,
+    )
+    a_codec_wrapper_info = await CompositeInfo.fetch(conn, _a_codec_wrapper_pg_name)
+    if a_codec_wrapper_info is None:
+        raise LookupError(f"composite type {_a_codec_wrapper_pg_name!r} not found; cannot register it")
+    register_composite(
+        a_codec_wrapper_info,
+        conn,
+        ACodecWrapper,
+        make_object=_a_codec_wrapper_make_object,
+        make_sequence=_a_codec_wrapper_make_sequence,
+    )
 
 def register_types_sync(conn: Connection[object]) -> None:
-    for name in _COMPOSITE_TYPES:
-        composite_info = CompositeInfo.fetch(conn, name)
-        if composite_info is None:
-            raise LookupError(f"composite type {name!r} not found; cannot register it")
-        register_composite(composite_info, conn)
-    for name in _ENUM_TYPES:
-        enum_info = TypeInfo.fetch(conn, name)
-        if enum_info is None:
-            raise LookupError(f"enum type {name!r} not found; cannot register it")
-        enum_info.register(conn)
+    mood_info = EnumInfo.fetch(conn, _mood_pg_name)
+    if mood_info is None:
+        raise LookupError(f"enum type {_mood_pg_name!r} not found; cannot register it")
+    register_enum(
+        mood_info,
+        conn,
+        Mood,
+        mapping={member: member.value for member in Mood},
+    )
+    point_2_d_info = CompositeInfo.fetch(conn, _point_2_d_pg_name)
+    if point_2_d_info is None:
+        raise LookupError(f"composite type {_point_2_d_pg_name!r} not found; cannot register it")
+    register_composite(
+        point_2_d_info,
+        conn,
+        Point2D,
+        make_object=_point_2_d_make_object,
+        make_sequence=_point_2_d_make_sequence,
+    )
+    tag_value_info = CompositeInfo.fetch(conn, _tag_value_pg_name)
+    if tag_value_info is None:
+        raise LookupError(f"composite type {_tag_value_pg_name!r} not found; cannot register it")
+    register_composite(
+        tag_value_info,
+        conn,
+        TagValue,
+        make_object=_tag_value_make_object,
+        make_sequence=_tag_value_make_sequence,
+    )
+    z_codec_payload_info = CompositeInfo.fetch(conn, _z_codec_payload_pg_name)
+    if z_codec_payload_info is None:
+        raise LookupError(f"composite type {_z_codec_payload_pg_name!r} not found; cannot register it")
+    register_composite(
+        z_codec_payload_info,
+        conn,
+        ZCodecPayload,
+        make_object=_z_codec_payload_make_object,
+        make_sequence=_z_codec_payload_make_sequence,
+    )
+    a_codec_wrapper_info = CompositeInfo.fetch(conn, _a_codec_wrapper_pg_name)
+    if a_codec_wrapper_info is None:
+        raise LookupError(f"composite type {_a_codec_wrapper_pg_name!r} not found; cannot register it")
+    register_composite(
+        a_codec_wrapper_info,
+        conn,
+        ACodecWrapper,
+        make_object=_a_codec_wrapper_make_object,
+        make_sequence=_a_codec_wrapper_make_sequence,
+    )

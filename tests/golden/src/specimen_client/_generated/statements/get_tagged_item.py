@@ -26,7 +26,7 @@ def _decode_row(row: Mapping[str, object]) -> GetTaggedItemRow:
     return GetTaggedItemRow(
         id=_cast(int, row["id"]),
         name=_cast(str, row["name"]),
-        tag=TagValue.pg_decode(row["tag"]),
+        tag=_cast(TagValue, row["tag"]),
     )
 
 

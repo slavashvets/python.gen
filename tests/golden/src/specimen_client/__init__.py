@@ -4,9 +4,11 @@
 
 from ._generated._core import JsonValue as JsonValue, NoRowError as NoRowError
 
+from ._generated.types.a_codec_wrapper import ACodecWrapper as ACodecWrapper
 from ._generated.types.mood import Mood as Mood
 from ._generated.types.point_2_d import Point2D as Point2D
 from ._generated.types.tag_value import TagValue as TagValue
+from ._generated.types.z_codec_payload import ZCodecPayload as ZCodecPayload
 
 from ._generated.statements.bump_specimen_revision import bump_specimen_revision as bump_specimen_revision
 from ._generated.statements.get_specimen import get_specimen as get_specimen, GetSpecimenRow as GetSpecimenRow
@@ -27,9 +29,11 @@ from . import sync as sync
 __all__ = [
     "JsonValue",
     "NoRowError",
+    "ACodecWrapper",
     "Mood",
     "Point2D",
     "TagValue",
+    "ZCodecPayload",
     "GetSpecimenRow",
     "GetTaggedItemRow",
     "InsertSpecimenRow",

@@ -6,7 +6,7 @@ SELECT
   doc_json, doc_jsonb,
   maybe_text, maybe_int, maybe_uuid, maybe_ts, maybe_num,
   tags, related_ids, grid,
-  feeling, origin,
+  feeling, origin, codec_payload, codec_payloads, codec_wrapper,
   label, rev, meta
 FROM specimen
 WHERE id = $id

@@ -31,7 +31,7 @@ build-backend = "hatchling.build"
 name = "${pkg_name//_/-}"
 version = "0.0.0"
 requires-python = ">=3.12"
-dependencies = ["psycopg>=3.2"]
+dependencies = ["psycopg>=3.3,<4"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/$pkg_name"]

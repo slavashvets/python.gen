@@ -16,8 +16,10 @@ from psycopg import AsyncConnection, Connection
 from .._core import JsonValue
 from .._runtime import fetch_optional as _fetch_optional
 from ..sync._runtime import fetch_optional as _fetch_optional_sync
+from ..types.a_codec_wrapper import ACodecWrapper
 from ..types.mood import Mood
 from ..types.point_2_d import Point2D
+from ..types.z_codec_payload import ZCodecPayload
 
 
 @dataclass(frozen=True, slots=True)
@@ -49,6 +51,9 @@ class GetSpecimenRow:
     grid: list[int | None] | None
     feeling: Mood
     origin: Point2D | None
+    codec_payload: ZCodecPayload
+    codec_payloads: list[ZCodecPayload | None]
+    codec_wrapper: ACodecWrapper | None
     label: str
     rev: int
     meta: JsonValue
@@ -81,8 +86,11 @@ def _decode_row(row: Mapping[str, object]) -> GetSpecimenRow:
         tags=_cast(list[str | None], row["tags"]),
         related_ids=_cast(list[UUID | None] | None, row["related_ids"]),
         grid=_cast(list[int | None] | None, row["grid"]),
-        feeling=Mood.pg_decode(row["feeling"]),
-        origin=None if row["origin"] is None else Point2D.pg_decode(row["origin"]),
+        feeling=_cast(Mood, row["feeling"]),
+        origin=_cast(Point2D | None, row["origin"]),
+        codec_payload=_cast(ZCodecPayload, row["codec_payload"]),
+        codec_payloads=_cast(list[ZCodecPayload | None], row["codec_payloads"]),
+        codec_wrapper=_cast(ACodecWrapper | None, row["codec_wrapper"]),
         label=_cast(str, row["label"]),
         rev=_cast(int, row["rev"]),
         meta=_cast(JsonValue, row["meta"]),
@@ -98,7 +106,7 @@ SELECT
   doc_json, doc_jsonb,
   maybe_text, maybe_int, maybe_uuid, maybe_ts, maybe_num,
   tags, related_ids, grid,
-  feeling, origin,
+  feeling, origin, codec_payload, codec_payloads, codec_wrapper,
   label, rev, meta
 FROM specimen
 WHERE id = %(id)s

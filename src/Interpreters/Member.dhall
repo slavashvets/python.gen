@@ -86,24 +86,23 @@ let run =
 
                                 let mkOutput =
                                       \(customImports : ImportSet.Type) ->
-                                      \(decodeExpr : Text -> Text) ->
                                         { fieldName
                                         , pgName = input.pgName
                                         , pyType
                                         , isNullable = input.isNullable
                                         , imports =
-                                            ImportSet.combine baseImports customImports
-                                        , decodeExpr
+                                            ImportSet.combineAll
+                                              [ baseImports
+                                              , customImports
+                                              , ImportSet.cast
+                                              ]
+                                        , decodeExpr = passthroughDecode
                                         }
 
-                                let wrapNullable =
-                                      \(call : Text -> Text) ->
-                                      \(src : Text) ->
-                                        if    input.isNullable
-                                        then  "None if ${src} is None else ${call src}"
-                                        else  call src
+                                let dimsAtMostTwo =
+                                      Natural/isZero (Natural/subtract 2 value.dims)
 
-                                let dimsIsOne =
+                                let dimsAtMostOne =
                                       Natural/isZero (Natural/subtract 1 value.dims)
 
                                 in  merge
@@ -113,51 +112,16 @@ let run =
                                                   ImportSet.customEnum
                                                     (customImport order)
 
-                                            in  if Natural/isZero value.dims
+                                            in  if dimsAtMostTwo
                                                 then  Lude.Compiled.ok
                                                         Output
-                                                        ( mkOutput
-                                                            enumImport
-                                                            ( wrapNullable
-                                                                ( \(src : Text) ->
-                                                                    "${typeName}.pg_decode(${src})"
-                                                                )
-                                                            )
-                                                        )
-                                                else  if dimsIsOne
-                                                then  let elemCast =
-                                                            if    value.elementIsNullable
-                                                            then  "list[str | None]"
-                                                            else  "list[str]"
-
-                                                      let elemDecode =
-                                                            if    value.elementIsNullable
-                                                            then  "None if v is None else ${typeName}.pg_decode(v)"
-                                                            else  "${typeName}.pg_decode(v)"
-
-                                                      let arrayImports =
-                                                            ImportSet.combineAll
-                                                              [ enumImport
-                                                              , ImportSet.enumArray
-                                                              , ImportSet.cast
-                                                              ]
-
-                                                      in  Lude.Compiled.ok
-                                                            Output
-                                                            ( mkOutput
-                                                                arrayImports
-                                                                ( wrapNullable
-                                                                    ( \(src : Text) ->
-                                                                        "[${elemDecode} for v in _cast(${elemCast}, _require_array(${src}))]"
-                                                                    )
-                                                                )
-                                                            )
+                                                        (mkOutput enumImport)
                                                 else  Lude.Compiled.report
                                                         Output
                                                         [ input.pgName
                                                         , name.inSnakeCase
                                                         ]
-                                                        "Array of an enum with dimensionality > 1 is not supported"
+                                                        "Array of an enum with dimensionality > 2 is not supported"
                                       , Composite =
                                           \ ( composite
                                             : { fields :
@@ -165,17 +129,12 @@ let run =
                                               , order : Natural
                                               }
                                             ) ->
-                                            if Natural/isZero value.dims
+                                            if dimsAtMostOne
                                             then  Lude.Compiled.ok
                                                     Output
                                                     ( mkOutput
                                                         ( ImportSet.customComposite
                                                             (customImport composite.order)
-                                                        )
-                                                        ( wrapNullable
-                                                            ( \(src : Text) ->
-                                                                "${typeName}.pg_decode(${src})"
-                                                            )
                                                         )
                                                     )
                                             else  Lude.Compiled.report
@@ -183,7 +142,7 @@ let run =
                                                     [ input.pgName
                                                     , name.inSnakeCase
                                                     ]
-                                                    "Array of a composite type is not supported (element-wise decode is unimplemented)"
+                                                    "Array of a composite type with dimensionality > 1 is not supported"
                                       , Absent =
                                           Lude.Compiled.report
                                             Output

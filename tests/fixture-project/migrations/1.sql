@@ -5,6 +5,18 @@
 
 create type mood as enum ('happy', 'sad', 'meh');
 
+create type z_codec_payload as (
+  "class" int8,
+  pg_decode text,
+  pg_encode text
+);
+
+create type a_codec_wrapper as (
+  payload z_codec_payload,
+  feeling mood,
+  note text
+);
+
 create type point2d as (
   x float8,
   y float8
@@ -79,6 +91,9 @@ create table specimen (
 
   -- composite
   origin        point2d,
+  codec_payload z_codec_payload not null,
+  codec_payloads z_codec_payload[] not null,
+  codec_wrapper a_codec_wrapper,
 
   -- domains
   label         display_name not null,

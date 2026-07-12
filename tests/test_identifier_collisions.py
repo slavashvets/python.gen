@@ -86,6 +86,8 @@ let Sdk = ./Deps/Sdk.dhall
 
 let PyIdent = ./Structures/PyIdent.dhall
 
+let RegisterModule = ./Templates/RegisterModule.dhall
+
 let Config = { packageName : Optional Text }
 
 let Config/default = { packageName = None Text }
@@ -95,7 +97,7 @@ let run =
       \(_ : Model.Project) ->
         Lude.Compiled.ok
           Lude.Files.Type
-          ( [ { path = "query-safe-name.txt"
+              ( [ { path = "query-safe-name.txt"
               , content =
                       PyIdent.querySafeName "_types"
                   ++  "\n"
@@ -108,8 +110,23 @@ let run =
                   ++  PyIdent.querySafeName "register_types"
                   ++  "\n"
               }
-            ] : Lude.Files.Type
-          )
+                ]
+          # [ { path = "composite-only-register.py"
+              , content =
+                  RegisterModule.run
+                    { customTypes =
+                      [ { typeName = "CompositeOnly"
+                        , moduleName = "composite_only"
+                        , pgSchema = "public"
+                        , pgName = "composite_only"
+                        , kind = RegisterModule.TypeKind.Composite
+                        }
+                      ]
+                    , emitSync = True
+                    }
+              }
+                ] : Lude.Files.Type
+              )
 
 in  Sdk.Sigs.generator Config Config/default run
 '''
@@ -141,6 +158,12 @@ in  Sdk.Sigs.generator Config Config/default run
         "sync_query",
         "register_types_query",
     ]
+    composite_register = (canary / "artifacts" / "python" / "composite-only-register.py").read_text()
+    assert "CompositeInfo" in composite_register
+    assert "register_composite" in composite_register
+    assert "_dataclass_callbacks" in composite_register
+    assert "EnumInfo" not in composite_register
+    assert "register_enum" not in composite_register
 
 
 @contextmanager
@@ -248,12 +271,11 @@ def _assert_statement_structure(statements: Path) -> None:
             for alias in node.names
             if alias.name == "require_array"
         ]
-        expected_core = [("require_array", "_require_array")] if function_name == "require_array" else []
-        assert [(alias.name, alias.asname) for alias in core_require_imports] == expected_core
+        assert not core_require_imports
 
     require_array_source = (statements / "require_array.py").read_text()
-    assert "from .._core import require_array as _require_array" in require_array_source
-    assert "_cast(list[str | None], _require_array(row[\"moods\"]))" in require_array_source
+    assert "from .._core import require_array as _require_array" not in require_array_source
+    assert '_cast(list[Mood | None] | None, row["moods"])' in require_array_source
     assert "from datetime import date" in (statements / "date_query.py").read_text()
 
 
@@ -310,6 +332,12 @@ def test_identifier_collisions_roundtrip(
     assert not (statements / "_types.py").exists()
     assert not (package_src / "_generated" / "sync" / "statements").exists()
     assert not (package_src / "_generated" / "sync" / "_register.py").exists()
+    register_source = (package_src / "_generated" / "_register.py").read_text()
+    assert "EnumInfo" in register_source
+    assert "register_enum" in register_source
+    assert "CompositeInfo" not in register_source
+    assert "register_composite" not in register_source
+    assert "_dataclass_callbacks" not in register_source
     _assert_strict(package_src, tmp_path)
 
     sys.path.insert(0, str(generated_src))

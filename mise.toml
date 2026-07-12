@@ -59,3 +59,131 @@ cp artifacts/python/src/specimen_client/sync/__init__.py "$root/tests/golden/src
 rm -rf "$root/tests/golden_sync"
 echo "combined golden refreshed; review with: git diff tests/golden"
 '''
+
+[tasks.signatures]
+description = "Check or apply an explicit allowlist of freshly analyzed fixture signatures"
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+root="$(pwd)"
+tmp="$(mktemp -d)"
+trap 'rm -rf "$tmp"' EXIT
+mkdir -p "$tmp/tests"
+cp -R "$root/src" "$tmp/src"
+cp -R "$root/tests/fixture-project" "$tmp/tests/fixture-project"
+fixture="$tmp/tests/fixture-project"
+rm -f "$fixture/freeze1.pgn.yaml"
+rm -rf "$fixture/artifacts"
+find "$fixture" -type f -name '*.sig1.pgn.yaml' -delete
+
+marker='  # The variants below'
+before_markers="$(grep -Fc "$marker" "$fixture/project1.pgn.yaml" || true)"
+if [[ "$before_markers" != 1 ]]; then
+  echo "expected exactly one project variant marker, found $before_markers" >&2
+  exit 1
+fi
+cp "$fixture/project1.pgn.yaml" "$tmp/project1.pgn.yaml.before"
+
+(
+  cd "$fixture"
+  pgn --database-url "${PGN_TEST_DATABASE_URL:-postgresql://postgres:postgres@localhost:5432/postgres?sslmode=disable}" analyse
+)
+
+after_markers="$(grep -Fc "$marker" "$fixture/project1.pgn.yaml" || true)"
+if [[ "$after_markers" != 1 ]]; then
+  echo "project variant marker changed during analysis" >&2
+  exit 1
+fi
+cmp "$tmp/project1.pgn.yaml.before" "$fixture/project1.pgn.yaml"
+
+mode="${PGN_SIGNATURE_MODE:-check}"
+allowlist="${PGN_SIGNATURE_PATHS:-}"
+if [[ -z "$allowlist" ]]; then
+  echo "PGN_SIGNATURE_PATHS must explicitly list the expected changed signatures" >&2
+  exit 1
+fi
+if [[ "$mode" != check && "$mode" != apply ]]; then
+  echo "PGN_SIGNATURE_MODE must be check or apply" >&2
+  exit 1
+fi
+
+mise exec -- python - "$root/tests/fixture-project" "$fixture" "$mode" "$allowlist" <<'PY'
+from __future__ import annotations
+
+import difflib
+import shutil
+import sys
+from pathlib import Path, PurePosixPath
+
+committed = Path(sys.argv[1])
+fresh = Path(sys.argv[2])
+mode = sys.argv[3]
+raw_allowlist = sys.argv[4]
+
+allowed_items = raw_allowlist.split()
+if len(allowed_items) != len(set(allowed_items)):
+    raise SystemExit("PGN_SIGNATURE_PATHS contains duplicate paths")
+
+allowed: set[PurePosixPath] = set()
+for item in allowed_items:
+    path = PurePosixPath(item)
+    if path.is_absolute() or ".." in path.parts or "\\" in item:
+        raise SystemExit(f"unsafe signature path: {item}")
+    if not path.parts or path.parts[0] not in {"queries", "types"}:
+        raise SystemExit(f"signature path must be under queries/ or types/: {item}")
+    if not item.endswith(".sig1.pgn.yaml") or path.as_posix() != item:
+        raise SystemExit(f"not a normalized signature path: {item}")
+    allowed.add(path)
+
+
+def signatures(root: Path) -> dict[PurePosixPath, Path]:
+    return {
+        PurePosixPath(path.relative_to(root).as_posix()): path
+        for path in root.rglob("*.sig1.pgn.yaml")
+    }
+
+
+old = signatures(committed)
+new = signatures(fresh)
+deletions = sorted(old.keys() - new.keys(), key=str)
+if deletions:
+    raise SystemExit("fresh analysis deleted signatures: " + ", ".join(map(str, deletions)))
+
+changed = {
+    path
+    for path in old.keys() | new.keys()
+    if path not in old or path not in new or old[path].read_bytes() != new[path].read_bytes()
+}
+unexpected = sorted(changed - allowed, key=str)
+if unexpected:
+    raise SystemExit("unexpected signature drift: " + ", ".join(map(str, unexpected)))
+
+not_changed = sorted(allowed - changed, key=str)
+if not_changed:
+    labels = []
+    for path in not_changed:
+        state = "unchanged" if path in old and path in new else "missing"
+        labels.append(f"{path} ({state})")
+    raise SystemExit("allowlisted signatures did not change: " + ", ".join(labels))
+
+for path in sorted(changed, key=str):
+    before = old[path].read_text().splitlines(keepends=True) if path in old else []
+    after = new[path].read_text().splitlines(keepends=True)
+    sys.stdout.writelines(
+        difflib.unified_diff(
+            before,
+            after,
+            fromfile=str(path) if path in old else "/dev/null",
+            tofile=str(path),
+        )
+    )
+
+if mode == "check":
+    raise SystemExit("signature differences found; review them, then rerun with PGN_SIGNATURE_MODE=apply")
+
+for path in sorted(changed, key=str):
+    destination = committed / Path(path.as_posix())
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(new[path], destination)
+PY
+'''
