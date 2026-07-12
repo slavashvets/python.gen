@@ -26,7 +26,7 @@ import psycopg
 import pytest
 from psycopg.conninfo import make_conninfo
 
-from tests._harness import FIXTURE_PROJECT, GOLDEN_DIR, HERE, ensure_droppable, run_pgn
+from tests._harness import FIXTURE_PROJECT, GOLDEN_DIR, GOLDEN_DIR_SYNC, HERE, ensure_droppable, run_pgn
 
 HARNESS_ROOT = HERE.parent
 
@@ -36,7 +36,8 @@ HARNESS_ROOT = HERE.parent
 # generate.
 GENERATED_SUBTREE = Path("src/specimen_client/_generated")
 FACADE_INIT = Path("src/specimen_client/__init__.py")
-SYNC_FACADE_INIT = Path("src/specimen_client/sync/__init__.py")
+GENERATED_SUBTREE_SYNC = Path("src/specimen_sync_client/_generated")
+FACADE_INIT_SYNC = Path("src/specimen_sync_client/__init__.py")
 
 
 def test_fixture_project_analyses_clean(pgn_bin: str, pgn_admin_url: str, fixture_copy: Path) -> None:
@@ -113,14 +114,47 @@ def test_generated_matches_golden(generated_tree: Path) -> None:
         if (produced_root / rel).read_text() != (golden_root / rel).read_text():
             mismatched.append(str(rel))
 
-    for facade in (FACADE_INIT, SYNC_FACADE_INIT):
-        if (generated_tree / facade).read_text() != (GOLDEN_DIR / facade).read_text():
-            mismatched.append(str(facade))
+    if (generated_tree / FACADE_INIT).read_text() != (GOLDEN_DIR / FACADE_INIT).read_text():
+        mismatched.append(str(FACADE_INIT))
 
     assert not mismatched, (
         "generated output drifted from golden in: "
         + ", ".join(mismatched)
         + "\nupdate via: rsync the fresh _generated subtree and the facade into golden (see tests/golden/README.md)"
+    )
+
+
+def test_generated_sync_matches_golden(generated_tree: Path) -> None:
+    """Sync-surface counterpart of test_generated_matches_golden.
+
+    generated_tree points at the "python" artifact; the sync surface's
+    output lives in the sibling "python_sync" artifact directory produced by
+    the same pgn generate call (see the generated_tree fixture).
+    """
+    generated_tree_sync = generated_tree.parent.parent / "artifacts" / "python_sync"
+    produced_root = generated_tree_sync / GENERATED_SUBTREE_SYNC
+    golden_root = GOLDEN_DIR_SYNC / GENERATED_SUBTREE_SYNC
+
+    produced = _relative_files(produced_root)
+    golden = _relative_files(golden_root)
+
+    missing = sorted(str(p) for p in golden - produced)
+    extra = sorted(str(p) for p in produced - golden)
+    assert not missing, f"golden files not produced by the generator: {missing}"
+    assert not extra, f"generator emitted files absent from golden: {extra}"
+
+    mismatched: list[str] = []
+    for rel in sorted(produced, key=str):
+        if (produced_root / rel).read_text() != (golden_root / rel).read_text():
+            mismatched.append(str(rel))
+
+    if (generated_tree_sync / FACADE_INIT_SYNC).read_text() != (GOLDEN_DIR_SYNC / FACADE_INIT_SYNC).read_text():
+        mismatched.append(str(FACADE_INIT_SYNC))
+
+    assert not mismatched, (
+        "generated sync output drifted from golden in: "
+        + ", ".join(mismatched)
+        + "\nupdate via: mise run golden (see tests/golden_sync/README.md)"
     )
 
 
@@ -160,6 +194,37 @@ def test_generated_passes_basedpyright_strict(tmp_path: Path) -> None:
     summary = json.loads(result.stdout)["summary"]
     # basedpyright exits 0 with filesAnalyzed=0 when the include path matches nothing,
     # so without this the strict gate would pass vacuously if the golden src ever moved.
+    assert summary["filesAnalyzed"] > 0, f"basedpyright analyzed no files; bad include path?\n{result.stdout}"
+    assert summary["errorCount"] == 0 and summary["warningCount"] == 0, (
+        f"basedpyright strict reported issues: {summary}\n{result.stdout}"
+    )
+
+
+def test_generated_sync_passes_basedpyright_strict(tmp_path: Path) -> None:
+    """basedpyright strict on the full sync-surface golden package."""
+    config = tmp_path / "pyrightconfig.json"
+    _ = config.write_text(
+        json.dumps(
+            {
+                "pythonVersion": "3.12",
+                "typeCheckingMode": "strict",
+                "include": [str(GOLDEN_DIR_SYNC / "src")],
+                "venvPath": str(HARNESS_ROOT),
+                "venv": ".venv",
+                "reportMissingModuleSource": False,
+            }
+        )
+    )
+    result = subprocess.run(
+        ["basedpyright", "--project", str(config), "--outputjson"],
+        capture_output=True,
+        text=True,
+    )
+
+    if not result.stdout.strip():
+        pytest.fail(f"basedpyright produced no JSON (exit {result.returncode}):\n{result.stderr}")
+
+    summary = json.loads(result.stdout)["summary"]
     assert summary["filesAnalyzed"] > 0, f"basedpyright analyzed no files; bad include path?\n{result.stdout}"
     assert summary["errorCount"] == 0 and summary["warningCount"] == 0, (
         f"basedpyright strict reported issues: {summary}\n{result.stdout}"
@@ -211,6 +276,16 @@ def _import_client(full_package: Path):  # noqa: ANN202 - dynamic module set
         sys.path.insert(0, src)
     for name in list(sys.modules):
         if name == "specimen_client" or name.startswith("specimen_client."):
+            del sys.modules[name]
+    return importlib.import_module
+
+
+def _import_client_sync(full_package_sync: Path):  # noqa: ANN202 - dynamic module set
+    src = str(full_package_sync / "src")
+    if src not in sys.path:
+        sys.path.insert(0, src)
+    for name in list(sys.modules):
+        if name == "specimen_sync_client" or name.startswith("specimen_sync_client."):
             del sys.modules[name]
     return importlib.import_module
 
@@ -389,36 +464,26 @@ def test_require_array_rejects_unregistered_enum_array(full_package: Path) -> No
         _ = runtime.require_array("{happy,sad}")
 
 
-def test_roundtrip_sync_and_cross_surface_identity(full_package: Path, roundtrip_db: str) -> None:
-    """The sync surface decodes through the same shared Row types as async.
+def test_roundtrip_sync_surface(full_package_sync: Path, roundtrip_db: str) -> None:
+    """The sync surface, generated independently with config.sync = true.
 
-    Drives the generated sync functions (psycopg.Connection, no await) end to end,
-    and asserts the Row dataclasses are shared across surfaces: both facades and
-    both statement modules expose the same class object (defined once in
-    _generated._rows), so a value typed against one surface is the other's too.
+    Drives the generated sync functions (psycopg.Connection, no await) end
+    to end, at the same unified paths the async surface uses (no `.sync.`
+    sub-path) — this package was generated standalone, not alongside async.
     """
     _apply_migrations(roundtrip_db)
-    import_module = _import_client(full_package)
+    import_module = _import_client_sync(full_package_sync)
 
-    register = import_module("specimen_client._generated.sync._register")
-    mood_mod = import_module("specimen_client._generated.types.mood")
-    point_mod = import_module("specimen_client._generated.types.point_2_d")
-    insert = import_module("specimen_client._generated.sync.statements.insert_specimen")
-    get = import_module("specimen_client._generated.sync.statements.get_specimen")
-    by_moods = import_module("specimen_client._generated.sync.statements.list_specimens_by_moods")
-    bump = import_module("specimen_client._generated.sync.statements.bump_specimen_revision")
+    register = import_module("specimen_sync_client._generated._register")
+    mood_mod = import_module("specimen_sync_client._generated.types.mood")
+    point_mod = import_module("specimen_sync_client._generated.types.point_2_d")
+    insert = import_module("specimen_sync_client._generated.statements.insert_specimen")
+    get = import_module("specimen_sync_client._generated.statements.get_specimen")
+    by_moods = import_module("specimen_sync_client._generated.statements.list_specimens_by_moods")
+    bump = import_module("specimen_sync_client._generated.statements.bump_specimen_revision")
 
     Mood = mood_mod.Mood
     Point2D = point_mod.Point2D
-
-    # Cross-surface identity: the async facade, the sync facade, the sync
-    # statement module, and the shared _rows module all expose the same object.
-    async_facade = import_module("specimen_client")
-    sync_facade = import_module("specimen_client.sync")
-    rows_mod = import_module("specimen_client._generated._rows")
-    assert async_facade.InsertSpecimenRow is sync_facade.InsertSpecimenRow
-    assert insert.InsertSpecimenRow is rows_mod.InsertSpecimenRow
-    assert async_facade.InsertSpecimenRow is rows_mod.InsertSpecimenRow
 
     conn = psycopg.connect(roundtrip_db, autocommit=True)
     try:
@@ -518,15 +583,15 @@ def test_roundtrip_single_field_composite(full_package: Path, roundtrip_db: str)
     asyncio.run(scenario())
 
 
-def test_roundtrip_single_field_composite_sync(full_package: Path, roundtrip_db: str) -> None:
+def test_roundtrip_single_field_composite_sync(full_package_sync: Path, roundtrip_db: str) -> None:
     """Sync-surface counterpart of test_roundtrip_single_field_composite."""
     _apply_migrations(roundtrip_db)
-    import_module = _import_client(full_package)
+    import_module = _import_client_sync(full_package_sync)
 
-    register = import_module("specimen_client._generated.sync._register")
-    tag_mod = import_module("specimen_client._generated.types.tag_value")
-    insert = import_module("specimen_client._generated.sync.statements.insert_tagged_item")
-    get = import_module("specimen_client._generated.sync.statements.get_tagged_item")
+    register = import_module("specimen_sync_client._generated._register")
+    tag_mod = import_module("specimen_sync_client._generated.types.tag_value")
+    insert = import_module("specimen_sync_client._generated.statements.insert_tagged_item")
+    get = import_module("specimen_sync_client._generated.statements.get_tagged_item")
 
     TagValue = tag_mod.TagValue
 

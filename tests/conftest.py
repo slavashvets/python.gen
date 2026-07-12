@@ -16,6 +16,7 @@ import pytest
 from tests._harness import (
     FIXTURE_PROJECT,
     GOLDEN_DIR,
+    GOLDEN_DIR_SYNC,
     HERE,
     SRC_DIR,
     admin_database_url,
@@ -113,4 +114,25 @@ def full_package(generated_tree: Path, tmp_path_factory: pytest.TempPathFactory)
         if sync_facade.exists():
             (dest_pkg / "sync").mkdir(parents=True, exist_ok=True)
             _ = shutil.copy2(sync_facade, dest_pkg / "sync" / "__init__.py")
+    return root
+
+
+@pytest.fixture(scope="session")
+def full_package_sync(generated_tree: Path, tmp_path_factory: pytest.TempPathFactory) -> Path:
+    """The sync-surface counterpart of `full_package`.
+
+    `generated_tree` already ran `pgn generate` against the full project
+    (all artifacts, including `python-sync`), so this reuses that one
+    subprocess call rather than invoking pgn again: it just points at the
+    sibling `python_sync` artifact directory instead of `python`.
+    """
+    generated_tree_sync = generated_tree.parent.parent / "artifacts" / "python_sync"
+    root = tmp_path_factory.mktemp("pkg-sync")
+    shell_src = GOLDEN_DIR_SYNC / "src"
+    generated_src = generated_tree_sync / "src"
+    _ = shutil.copytree(shell_src, root / "src", ignore=shutil.ignore_patterns("_generated", "__init__.py"))
+    for pkg_dir in generated_src.iterdir():
+        dest_pkg = root / "src" / pkg_dir.name
+        _ = shutil.copytree(pkg_dir / "_generated", dest_pkg / "_generated")
+        _ = shutil.copy2(pkg_dir / "__init__.py", dest_pkg / "__init__.py")
     return root
