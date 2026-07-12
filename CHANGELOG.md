@@ -1,5 +1,18 @@
 # Upcoming
 
+- **Breaking:** `emitSync` is gone. In its place, `sync : Optional Bool`
+  (default `False`) picks exactly one surface per generate — async or sync —
+  emitted at the same unified paths either way (no more `sync/` subdirectory,
+  no more second package-root facade). Previously `emitSync: true` added a
+  second, nested sync tree alongside the always-emitted async one; a project
+  that needs both surfaces now generates two artifacts against this same
+  `gen:` with different `packageName`s, one with `sync: true` and one
+  without. See `docs/plans/2026-07-12-configurable-sync-output.md` for the
+  full rationale and migration shape. `tests/golden_sync/` is a new committed
+  golden fixture (`specimen_sync_client`) exercising the sync surface
+  end-to-end (basedpyright strict + round-trip), alongside the existing
+  `tests/golden/` (`specimen_client`, now async-only).
+
 - `buildLookup` (`Interpreters/Project.dhall`) and, with it, this generator's
   last dependency on pgn's fork-only `Text/equal` builtin are removed from
   `src/`: custom-type decode/encode now dispatches through named
