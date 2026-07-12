@@ -177,7 +177,6 @@ def test_skip_unsupported_drops_offending_units_and_cascades(
         assert (src / "types" / f"{name}.py").is_file(), f"{name} should not have been skipped"
 
     facade = (package_src / "__init__.py").read_text()
-    rows = (src / "_rows.py").read_text()
     register = (src / "_register.py").read_text()
     types_init = (src / "types" / "__init__.py").read_text()
     for orphan in (
@@ -188,7 +187,6 @@ def test_skip_unsupported_drops_offending_units_and_cascades(
         "WrappedPoint",
     ):
         assert orphan not in facade, f"facade references skipped {orphan}"
-        assert orphan not in rows, f"_rows references skipped {orphan}"
         assert orphan not in register, f"_register references skipped {orphan}"
         assert orphan not in types_init, f"types/__init__ references skipped {orphan}"
 
@@ -200,7 +198,6 @@ def test_skip_unsupported_drops_offending_units_and_cascades(
                 del sys.modules[name]
         importlib.import_module("fixture")
         importlib.import_module("fixture._generated._register")
-        importlib.import_module("fixture._generated._rows")
         for name in kept_statements:
             importlib.import_module(f"fixture._generated.statements.{name}")
     finally:

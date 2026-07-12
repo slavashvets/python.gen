@@ -65,20 +65,25 @@ let run =
 
         let rows = rowNames params.statements
 
-        let rowBlock =
-                  "from ${generatedPrefix}._rows import (\n"
-              ++  Prelude.Text.concatMap
-                    Text
-                    (\(name : Text) -> "    ${alias name},\n")
-                    rows
-              ++  ")"
-
+        -- A query's Row class now lives in that query's own statement
+        -- module (there is no shared _rows module anymore), so the row
+        -- alias, when present, rides on the same import line as the
+        -- statement function itself: "from ...statements.fn import fn as
+        -- fn, RowCls as RowCls" -- one line per statement, not two separate
+        -- import blocks.
         let statementBlock =
               Prelude.Text.concatMapSep
                 "\n"
                 StatementExport
                 ( \(s : StatementExport) ->
-                    "from ${generatedPrefix}.${statementsPath}.${s.functionName} import ${alias s.functionName}"
+                    let rowSuffix =
+                          merge
+                            { None = "", Some = \(row : Text) -> ", ${alias row}" }
+                            s.rowClassName
+
+                    in      "from ${generatedPrefix}.${statementsPath}.${s.functionName} import "
+                        ++  alias s.functionName
+                        ++  rowSuffix
                 )
                 params.statements
 
@@ -88,7 +93,6 @@ let run =
                     then  [] : List Text
                     else  [ typeBlock ]
                   )
-                # (if Prelude.List.null Text rows then [] : List Text else [ rowBlock ])
                 # ( if    Prelude.List.null StatementExport params.statements
                     then  [] : List Text
                     else  [ statementBlock ]

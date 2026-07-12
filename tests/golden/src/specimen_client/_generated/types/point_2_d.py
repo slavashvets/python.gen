@@ -11,15 +11,15 @@ class Point2D:
     """Decoding/encoding this composite requires register_types(conn) first.
 
     Without per-connection registration psycopg returns the value as a
-    raw string, which the generated _decode cannot splat into the dataclass.
+    raw string, which the generated pg_decode cannot splat into the dataclass.
     """
 
     x: float | None
     y: float | None
 
     @staticmethod
-    def _decode(src: object) -> "Point2D":
+    def pg_decode(src: object) -> "Point2D":
         return Point2D(*cast(tuple[float | None, float | None], src))
 
-    def _encode(self) -> tuple[float | None, float | None]:
+    def pg_encode(self) -> tuple[float | None, float | None]:
         return (self.x, self.y)

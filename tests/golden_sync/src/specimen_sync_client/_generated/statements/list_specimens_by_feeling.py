@@ -4,11 +4,46 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
+from dataclasses import dataclass
+from typing import cast
+from uuid import UUID
+
 from psycopg import Connection
 
-from .._rows import ListSpecimensByFeelingRow, decode_list_specimens_by_feeling
+from .._core import JsonValue
 from .._runtime import fetch_many
 from ..types.mood import Mood
+from ..types.mood import Mood
+from ..types.point_2_d import Point2D
+
+
+@dataclass(frozen=True, slots=True)
+class ListSpecimensByFeelingRow:
+    id: int
+    pub_id: UUID
+    feeling: Mood
+    title: str
+    label: str
+    rev: int
+    origin: Point2D | None
+    tags: list[str | None]
+    meta: JsonValue
+
+
+def decode_list_specimens_by_feeling(row: Mapping[str, object]) -> ListSpecimensByFeelingRow:
+    return ListSpecimensByFeelingRow(
+        id=cast(int, row["id"]),
+        pub_id=cast(UUID, row["pub_id"]),
+        feeling=Mood.pg_decode(row["feeling"]),
+        title=cast(str, row["title"]),
+        label=cast(str, row["label"]),
+        rev=cast(int, row["rev"]),
+        origin=None if row["origin"] is None else Point2D.pg_decode(row["origin"]),
+        tags=cast(list[str | None], row["tags"]),
+        meta=cast(JsonValue, row["meta"]),
+    )
+
 
 SQL = """\
 -- many: select with order by. Enum parameter ($feeling).
@@ -28,6 +63,6 @@ def list_specimens_by_feeling(
     feeling: Mood | None,
 ) -> list[ListSpecimensByFeelingRow]:
     params: dict[str, object] = {
-        "feeling": None if feeling is None else feeling._encode(),
+        "feeling": None if feeling is None else feeling.pg_encode(),
     }
     return fetch_many(conn, _SQL, params, decode_list_specimens_by_feeling)

@@ -8,30 +8,17 @@ from ._generated.types.mood import Mood as Mood
 from ._generated.types.point_2_d import Point2D as Point2D
 from ._generated.types.tag_value import TagValue as TagValue
 
-from ._generated._rows import (
-    GetSpecimenRow as GetSpecimenRow,
-    GetTaggedItemRow as GetTaggedItemRow,
-    InsertSpecimenRow as InsertSpecimenRow,
-    InsertTaggedItemRow as InsertTaggedItemRow,
-    ListSpecimensByClassRow as ListSpecimensByClassRow,
-    ListSpecimensByFeelingRow as ListSpecimensByFeelingRow,
-    ListSpecimensByIdsRow as ListSpecimensByIdsRow,
-    ListSpecimensByMoodsRow as ListSpecimensByMoodsRow,
-    ListSpecimensKeywordColumnRow as ListSpecimensKeywordColumnRow,
-    SearchSpecimensRow as SearchSpecimensRow,
-)
-
 from ._generated.statements.bump_specimen_revision import bump_specimen_revision as bump_specimen_revision
-from ._generated.statements.get_specimen import get_specimen as get_specimen
-from ._generated.statements.get_tagged_item import get_tagged_item as get_tagged_item
-from ._generated.statements.insert_specimen import insert_specimen as insert_specimen
-from ._generated.statements.insert_tagged_item import insert_tagged_item as insert_tagged_item
-from ._generated.statements.list_specimens_by_class import list_specimens_by_class as list_specimens_by_class
-from ._generated.statements.list_specimens_by_feeling import list_specimens_by_feeling as list_specimens_by_feeling
-from ._generated.statements.list_specimens_by_ids import list_specimens_by_ids as list_specimens_by_ids
-from ._generated.statements.list_specimens_by_moods import list_specimens_by_moods as list_specimens_by_moods
-from ._generated.statements.list_specimens_keyword_column import list_specimens_keyword_column as list_specimens_keyword_column
-from ._generated.statements.search_specimens import search_specimens as search_specimens
+from ._generated.statements.get_specimen import get_specimen as get_specimen, GetSpecimenRow as GetSpecimenRow
+from ._generated.statements.get_tagged_item import get_tagged_item as get_tagged_item, GetTaggedItemRow as GetTaggedItemRow
+from ._generated.statements.insert_specimen import insert_specimen as insert_specimen, InsertSpecimenRow as InsertSpecimenRow
+from ._generated.statements.insert_tagged_item import insert_tagged_item as insert_tagged_item, InsertTaggedItemRow as InsertTaggedItemRow
+from ._generated.statements.list_specimens_by_class import list_specimens_by_class as list_specimens_by_class, ListSpecimensByClassRow as ListSpecimensByClassRow
+from ._generated.statements.list_specimens_by_feeling import list_specimens_by_feeling as list_specimens_by_feeling, ListSpecimensByFeelingRow as ListSpecimensByFeelingRow
+from ._generated.statements.list_specimens_by_ids import list_specimens_by_ids as list_specimens_by_ids, ListSpecimensByIdsRow as ListSpecimensByIdsRow
+from ._generated.statements.list_specimens_by_moods import list_specimens_by_moods as list_specimens_by_moods, ListSpecimensByMoodsRow as ListSpecimensByMoodsRow
+from ._generated.statements.list_specimens_keyword_column import list_specimens_keyword_column as list_specimens_keyword_column, ListSpecimensKeywordColumnRow as ListSpecimensKeywordColumnRow
+from ._generated.statements.search_specimens import search_specimens as search_specimens, SearchSpecimensRow as SearchSpecimensRow
 
 __all__ = [
     "JsonValue",

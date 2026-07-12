@@ -6,7 +6,7 @@ let Sdk = ../Deps/Sdk.dhall
 -- exceptions, and the require_array decode guard. It performs no I/O, so there is
 -- exactly one copy regardless of surface. The two _runtime.py modules re-export
 -- JsonValue/NoRowError/require_array from here so off-contract imports keep
--- working, and _rows.py, the statement modules, and the facades import these
+-- working, and the statement modules and facades import these
 -- names from _core directly.
 let content =
       ''

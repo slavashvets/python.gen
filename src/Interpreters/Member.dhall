@@ -107,7 +107,7 @@ let run =
                                             ( mkOutput
                                                 (ImportSet.custom customImport)
                                                 ( wrapNullable
-                                                    (\(src : Text) -> "${typeName}._decode(${src})")
+                                                    (\(src : Text) -> "${typeName}.pg_decode(${src})")
                                                 )
                                             )
                                     else  if    dimsIsOne
@@ -118,8 +118,8 @@ let run =
 
                                           let elemDecode =
                                                 if    value.elementIsNullable
-                                                then  "None if v is None else ${typeName}._decode(v)"
-                                                else  "${typeName}._decode(v)"
+                                                then  "None if v is None else ${typeName}.pg_decode(v)"
+                                                else  "${typeName}.pg_decode(v)"
 
                                           in  Lude.Compiled.ok
                                                 Output

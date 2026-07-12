@@ -4,11 +4,38 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
+from dataclasses import dataclass
+from typing import cast
+from uuid import UUID
+
 from psycopg import Connection
 
-from .._rows import ListSpecimensByMoodsRow, decode_list_specimens_by_moods
+from .._core import require_array
 from .._runtime import fetch_many
 from ..types.mood import Mood
+from ..types.mood import Mood
+from ..types.mood import Mood
+
+
+@dataclass(frozen=True, slots=True)
+class ListSpecimensByMoodsRow:
+    id: int
+    pub_id: UUID
+    feeling: Mood
+    moods: list[Mood | None] | None
+    title: str
+
+
+def decode_list_specimens_by_moods(row: Mapping[str, object]) -> ListSpecimensByMoodsRow:
+    return ListSpecimensByMoodsRow(
+        id=cast(int, row["id"]),
+        pub_id=cast(UUID, row["pub_id"]),
+        feeling=Mood.pg_decode(row["feeling"]),
+        moods=None if row["moods"] is None else [None if v is None else Mood.pg_decode(v) for v in cast(list[str | None], require_array(row["moods"]))],
+        title=cast(str, row["title"]),
+    )
+
 
 SQL = """\
 -- many: enum array parameter via = any($moods::mood[]); returns the enum array column.
@@ -28,6 +55,6 @@ def list_specimens_by_moods(
     moods: list[Mood | None] | None,
 ) -> list[ListSpecimensByMoodsRow]:
     params: dict[str, object] = {
-        "moods": None if moods is None else [None if x is None else x._encode() for x in moods],
+        "moods": None if moods is None else [None if x is None else x.pg_encode() for x in moods],
     }
     return fetch_many(conn, _SQL, params, decode_list_specimens_by_moods)

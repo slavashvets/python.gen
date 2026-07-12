@@ -4,12 +4,33 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
+from dataclasses import dataclass
+from typing import cast
 from uuid import UUID
 
 from psycopg import AsyncConnection
 
-from .._rows import ListSpecimensByIdsRow, decode_list_specimens_by_ids
 from .._runtime import fetch_many
+from ..types.mood import Mood
+
+
+@dataclass(frozen=True, slots=True)
+class ListSpecimensByIdsRow:
+    id: int
+    pub_id: UUID
+    feeling: Mood
+    title: str
+
+
+def decode_list_specimens_by_ids(row: Mapping[str, object]) -> ListSpecimensByIdsRow:
+    return ListSpecimensByIdsRow(
+        id=cast(int, row["id"]),
+        pub_id=cast(UUID, row["pub_id"]),
+        feeling=Mood.pg_decode(row["feeling"]),
+        title=cast(str, row["title"]),
+    )
+
 
 SQL = """\
 -- many: array parameter via = any($pub_ids).

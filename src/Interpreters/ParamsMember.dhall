@@ -285,13 +285,13 @@ let run =
 
                           let scalarEncode =
                                 if    input.isNullable
-                                then  "None if ${fieldName} is None else ${fieldName}._encode()"
-                                else  "${fieldName}._encode()"
+                                then  "None if ${fieldName} is None else ${fieldName}.pg_encode()"
+                                else  "${fieldName}.pg_encode()"
 
                           let arrayElemEncode =
                                 if    value.elementIsNullable
-                                then  "None if x is None else x._encode()"
-                                else  "x._encode()"
+                                then  "None if x is None else x.pg_encode()"
+                                else  "x.pg_encode()"
 
                           let arrayEncode =
                                 let base = "[${arrayElemEncode} for x in ${fieldName}]"

@@ -10,7 +10,6 @@ let Surface =
       { defKeyword : Text
       , connType : Text
       , awaitKw : Text
-      , rowsImport : Text
       , corePrefix : Text
       , typesPrefix : Text
       }
@@ -20,7 +19,6 @@ let async
     = { defKeyword = "async def"
       , connType = "AsyncConnection"
       , awaitKw = "await "
-      , rowsImport = ".._rows"
       , corePrefix = ".._core"
       , typesPrefix = "..types"
       }
@@ -30,7 +28,6 @@ let sync
     = { defKeyword = "def"
       , connType = "Connection"
       , awaitKw = ""
-      , rowsImport = ".._rows"
       , corePrefix = ".._core"
       , typesPrefix = "..types"
       }

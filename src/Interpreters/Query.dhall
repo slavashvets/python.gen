@@ -1,6 +1,8 @@
+let Lude = ../Deps/Lude.dhall
+
 let Prelude = ../Deps/Prelude.dhall
 
-let Lude = ../Deps/Lude.dhall
+let Model = ../Deps/Contract.dhall
 
 let Sdk = ../Deps/Sdk.dhall
 
@@ -11,8 +13,6 @@ let PyIdent = ../Structures/PyIdent.dhall
 let Surface = ../Structures/Surface.dhall
 
 let OnUnsupported = ../Structures/OnUnsupported.dhall
-
-let RowsModule = ../Templates/RowsModule.dhall
 
 let ResultModule = ./Result.dhall
 
@@ -31,17 +31,17 @@ let Config =
 
 let Compiled = Lude.Compiled
 
-let Model = ../Deps/Contract.dhall
-
 let Input = Model.Query
 
--- A query contributes a shared Row (assembled into `_rows.py` by Project) plus
--- one thin statement module, rendered for whichever surface config.sync picked.
+-- A query renders to one thin statement module: its own Row dataclass and
+-- decode function (when it returns rows) plus the I/O wrapper for whichever
+-- surface config.sync picked. rowClassName is still surfaced here (not just
+-- internal to the rendered content) because Project.dhall's facade needs the
+-- name to build the re-export line; the Row's full definition does not
+-- leave this module.
 let Output =
       { functionName : Text
       , rowClassName : Optional Text
-      , rowDef : Optional RowsModule.RowDef
-      , rowImports : ImportSet.Type
       , modulePath : Text
       , content : Text
       }
@@ -95,7 +95,7 @@ let render =
         let rowDef =
               Prelude.Optional.map
                 ResultModule.RowClass
-                RowsModule.RowDef
+                StatementModule.RowDef
                 ( \(rc : ResultModule.RowClass) ->
                     { className = rc.name
                     , fieldsBlock = rc.fieldsBlock
@@ -104,6 +104,12 @@ let render =
                     }
                 )
                 result.rowClass
+
+        -- The Row's own imports (JsonValue, Decimal, custom types, ...) and
+        -- the parameters' imports both land in this one file now, so they
+        -- merge into a single ImportSet instead of flowing to two separate
+        -- consumers (the statement module and, formerly, _rows.py).
+        let mergedImports = ImportSet.combine paramImports result.imports
 
         let surface = if config.sync then Surface.sync else Surface.async
 
@@ -114,18 +120,16 @@ let render =
                 , helperName = result.helperName
                 , callsDecode = result.callsDecode
                 , sqlLiteral = fragments.sqlLiteral
-                , rowClassName
+                , rowDef
                 , decodeName
                 , paramSigLines
                 , paramDictEntries
-                , imports = paramImports
+                , imports = mergedImports
                 , surface
                 }
 
         in  { functionName
             , rowClassName
-            , rowDef
-            , rowImports = result.imports
             , modulePath = "statements/${functionName}.py"
             , content
             }

@@ -4,11 +4,31 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
+from dataclasses import dataclass
+from typing import cast
+
 from psycopg import Connection
 
-from .._rows import InsertTaggedItemRow, decode_insert_tagged_item
 from .._runtime import fetch_single
 from ..types.tag_value import TagValue
+from ..types.tag_value import TagValue
+
+
+@dataclass(frozen=True, slots=True)
+class InsertTaggedItemRow:
+    id: int
+    name: str
+    tag: TagValue
+
+
+def decode_insert_tagged_item(row: Mapping[str, object]) -> InsertTaggedItemRow:
+    return InsertTaggedItemRow(
+        id=cast(int, row["id"]),
+        name=cast(str, row["name"]),
+        tag=TagValue.pg_decode(row["tag"]),
+    )
+
 
 SQL = """\
 -- single row: insert exercising a single-field composite as a parameter and
@@ -29,6 +49,6 @@ def insert_tagged_item(
 ) -> InsertTaggedItemRow:
     params: dict[str, object] = {
         "name": name,
-        "tag": tag._encode(),
+        "tag": tag.pg_encode(),
     }
     return fetch_single(conn, _SQL, params, decode_insert_tagged_item)

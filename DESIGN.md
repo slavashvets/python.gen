@@ -116,7 +116,7 @@ those the decode is a `cast(<pyType>, row["<pgName>"])` to satisfy strict
 
 - enum column: `Mood(cast(str, row["feeling"]))`; nullable guards `None`.
 - enum array column: element-wise rebuild,
-  `[Mood._decode(v) for v in cast(list[str], row["..."])]`, with per-element
+  `[Mood.pg_decode(v) for v in cast(list[str], row["..."])]`, with per-element
   and outer `None` guards driven by `elementIsNullable` / column nullability,
   built at the reference site in `Member.dhall` rather than a per-type array
   method (see below). Requires the enum's TypeInfo registered (section 6).
@@ -129,7 +129,7 @@ those the decode is a `cast(<pyType>, row["<pgName>"])` to satisfy strict
 compose the same logic. Any custom-type array with `dims > 1` is
 unimplemented and fails loudly (`Compiled.report`), regardless of kind. For
 `dims == 1`, `Member.dhall` builds the list comprehension itself
-(`[${typeName}._decode(v) for v in cast(...)]`, with per-element/outer
+(`[${typeName}.pg_decode(v) for v in cast(...)]`, with per-element/outer
 `None` guards driven by `value.elementIsNullable`/`isNullable`) instead of
 calling a per-type array method: a per-type, zero-argument method has no way
 to see `elementIsNullable`, a per-*column* fact, so it cannot express it.
@@ -223,8 +223,8 @@ loud-fail contract for bind shapes psycopg cannot adapt faithfully. It
 still rejects a `json`/`jsonb` ARRAY param (`Jsonb` wraps a scalar, not
 element-wise). A composite ARRAY param is no longer rejected here the way
 it used to be (see section 12): encode branches on `Natural/isZero
-value.dims`, calling `<field>._encode()` for a scalar custom-type param and
-building `[x._encode() for x in <field>]` (with the same
+value.dims`, calling `<field>.pg_encode()` for a scalar custom-type param and
+building `[x.pg_encode() for x in <field>]` (with the same
 `elementIsNullable`/outer-nullable guards as decode) for an array one, so a
 composite-array param now type-checks and attempts a genuine per-element
 encode rather than depending on `basedpyright strict` to catch a missing
@@ -283,14 +283,14 @@ it existed only to satisfy `Member.run`'s old signature, and was deleted
 along with `buildLookup` (section 12) — but its removal does not make this
 case work; it only removed the one thing that used to reject it at
 generation time. `Member.run` does compute a named-codec `decodeExpr`
-(`${typeName}._decode(...)`) for a `Custom`-typed field, but
+(`${typeName}.pg_decode(...)`) for a `Custom`-typed field, but
 `CustomType.dhall`'s Composite branch never threads it anywhere: it maps
 each member down to a flat `{fieldName, fieldType}` pair (the `Field` shape
 `Templates/CompositeModule.dhall` takes) and discards `decodeExpr`
-entirely. `CompositeModule.dhall`'s `_decode`/`_encode` — unchanged by this
+entirely. `CompositeModule.dhall`'s `pg_decode`/`pg_encode` — unchanged by this
 refactor — render a single blind `${typeName}(*cast(tuple[...], src))`
 splat and a flat `(self.field1, ...)` tuple; neither ever calls a nested
-field's own `_decode`/`_encode`. So a composite field whose own type is
+field's own `pg_decode`/`pg_encode`. So a composite field whose own type is
 another custom type still does not decode/encode correctly at
 runtime — it is just no longer *rejected* at generation time the way it
 used to be. Unlike the composite-array case (section 12), this is **not**
@@ -300,7 +300,7 @@ sees exactly the annotated field type and raises nothing. This is a real,
 silent architecture gap introduced by this refactor — flagged here as an
 open follow-up design question (should `CustomType.dhall` thread a
 member's own `decodeExpr` through to `CompositeModule.dhall`, or does
-`_decode` need to become field-aware instead of a blind tuple cast?), not
+`pg_decode` need to become field-aware instead of a blind tuple cast?), not
 something fixed in this commit and not on the same footing as the
 composite-array case's deferred-but-backstopped behavior change.
 
@@ -465,7 +465,7 @@ Absent >` from the (post-Skip-filter) custom types and threaded it to
 lookup, and `Structures/CustomKind.dhall` itself, are deleted. `Scalar`/
 `Value`/`Primitive` still stop at "Custom + Name", but `Member.dhall`/
 `ParamsMember.dhall` now resolve a `Custom` reference by calling the
-generated class's `_decode`/`_encode` method directly, keyed off
+generated class's `pg_decode`/`pg_encode` method directly, keyed off
 `name.inPascalCase` — no project-wide search, no classification step
 threaded through the query pipeline. Array (dims > 0) decode/encode stays
 local to the call site rather than becoming a third per-type method,
@@ -545,10 +545,10 @@ could classify a `Custom` reference and pull its fields. `buildLookup` and
 `ab8f4df`.
 
 In their place, `CompositeModule.dhall`/`EnumModule.dhall` now emit a
-`_decode`/`_encode` method directly onto each generated custom type's
+`pg_decode`/`pg_encode` method directly onto each generated custom type's
 Python class, covering the scalar (`dims == 0`) case. `Member.dhall` and
 `ParamsMember.dhall` call it by name off `name.inPascalCase` at the
-reference site (e.g. `${typeName}._decode(src)`) instead of resolving
+reference site (e.g. `${typeName}.pg_decode(src)`) instead of resolving
 classification/fields via a project-wide name search. No name-equality
 comparison is needed at all anymore, so there's nothing left for
 `Text/equal` to do here. `grep -rn "Text/equal" src` confirms this: it
@@ -566,30 +566,30 @@ than a `list[Mood]` column of the same enum). That method hardcoded the
 non-nullable-element shape unconditionally, silently breaking
 nullable-element enum-array decode (a runtime crash on any `NULL` array
 element) and, symmetrically, `ParamsMember.dhall`'s unconditional
-`${field}._encode()` broke enum-array param encode (calling `._encode()` on
+`${field}.pg_encode()` broke enum-array param encode (calling `.pg_encode()` on
 a `list`). Both were working, corpus-exercised paths before this refactor.
 The fix moves array handling back to the call site, exactly where it lived
 before this refactor: `Member.dhall`'s dims==1 branch and
 `ParamsMember.dhall`'s `Natural/isZero value.dims` branch build the list
 comprehension locally, reading `value.elementIsNullable`/`value.dims` off
 the column- or param-local `Value.Output`, and delegate only the
-per-element transform to `${typeName}._decode(v)` / `x._encode()`. This
+per-element transform to `${typeName}.pg_decode(v)` / `x.pg_encode()`. This
 restores exact parity with the pre-refactor `enumArrayDecode`/array-param
 behavior for enums (verified against
 `tests/golden/src/specimen_client/_generated/_rows.py`'s `moods` column and
 `statements/insert_specimen.py`'s `moods` param — same shape, just calling
-`._decode`/`._encode` per element instead of the enum constructor/bare
+`.pg_decode`/`.pg_encode` per element instead of the enum constructor/bare
 pass-through).
 
 A behavior change worth flagging, now unavoidable rather than accidental:
 because the call site's array branch is kind-uniform (the same
-`${typeName}._decode(v)`/`x._encode()` call per element regardless of
+`${typeName}.pg_decode(v)`/`x.pg_encode()` call per element regardless of
 whether `typeName` is an enum or a composite), a 1-D composite-array column
 or param is no longer rejected at Dhall-generation time the way it used to
 be (the old "Array of a composite type is not supported" reports are
 gone), and — unlike the `_decode_array` design it replaces — no longer
 depends on `basedpyright strict` catching a missing method either, since
-`CompositeModule.dhall`'s `_decode`/`_encode` genuinely exist. A
+`CompositeModule.dhall`'s `pg_decode`/`pg_encode` genuinely exist. A
 composite-array column/param now type-checks and attempts a real
 per-element decode/encode. **This path remains unverified against real
 Postgres either way** — composite arrays were never tested before this
@@ -608,7 +608,7 @@ loud-fail path as any unresolvable reference (see section 5). That stub is
 gone — it existed only to satisfy `Member.run`'s old signature, and was
 deleted along with `buildLookup` — but, unlike the composite-array case
 just above, this is not "the same behavior change, just unexercised."
-`CompositeModule.dhall`'s `_decode`/`_encode` do a blind flat
+`CompositeModule.dhall`'s `pg_decode`/`pg_encode` do a blind flat
 `cast(tuple[...], src)`/splat and never recurse into a nested field's own
 codec, unchanged by this refactor; removing the stub only removed the
 thing that used to reject a nested custom-type composite field at

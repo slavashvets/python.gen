@@ -44,18 +44,28 @@ let run =
               then  "(${selfFieldsJoined},)"
               else  "(${selfFieldsJoined})"
 
-        -- _decode/_encode are emitted as literal lines (not a nested multi-line
-        -- ''...'' block) because Dhall dedents a multi-line literal against its
-        -- OWN source indentation before splicing it into the outer literal; a
-        -- nested block loses its intended 4/8-space class-body indentation.
-        -- Verified against `dhall text` during design.
+        -- pg_decode/pg_encode are emitted as literal lines (not a nested
+        -- multi-line ''...'' block) because Dhall dedents a multi-line
+        -- literal against its OWN source indentation before splicing it into
+        -- the outer literal; a nested block loses its intended 4/8-space
+        -- class-body indentation. Verified against `dhall text` during design.
+        --
+        -- Named `pg_decode`/`pg_encode` rather than `_decode`/`_encode`: every
+        -- caller lives in a different generated module
+        -- (Member.dhall/ParamsMember.dhall), so a leading underscore only
+        -- earns a basedpyright strict reportPrivateUsage error, not real
+        -- privacy. Plain `decode`/`encode` was tried first and rejected:
+        -- EnumModule.dhall's generated class subclasses StrEnum, and `encode`
+        -- there collides with `str.encode`'s incompatible signature
+        -- (reportIncompatibleMethodOverride). The `pg_` prefix keeps both
+        -- generated shapes on one shared name with no collision either way.
         let codecMethods =
                 "\n"
               ++ "    @staticmethod\n"
-              ++ "    def _decode(src: object) -> \"${params.typeName}\":\n"
+              ++ "    def pg_decode(src: object) -> \"${params.typeName}\":\n"
               ++ "        return ${params.typeName}(*cast(tuple[${fieldTypesJoined}], src))\n"
               ++ "\n"
-              ++ "    def _encode(self) -> tuple[${fieldTypesJoined}]:\n"
+              ++ "    def pg_encode(self) -> tuple[${fieldTypesJoined}]:\n"
               ++ "        return ${encodeTupleExpr}"
 
         let imports =
@@ -76,7 +86,7 @@ let run =
                 """Decoding/encoding this composite requires register_types(conn) first.
 
                 Without per-connection registration psycopg returns the value as a
-                raw string, which the generated _decode cannot splat into the dataclass.
+                raw string, which the generated pg_decode cannot splat into the dataclass.
                 """
 
             ${fieldLines}

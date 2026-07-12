@@ -12,8 +12,8 @@ class Mood(StrEnum):
     MEH = "meh"
 
     @staticmethod
-    def _decode(src: object) -> "Mood":
+    def pg_decode(src: object) -> "Mood":
         return Mood(cast(str, src))
 
-    def _encode(self) -> "Mood":
+    def pg_encode(self) -> "Mood":
         return self

@@ -4,12 +4,33 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
+from dataclasses import dataclass
+from typing import cast
+
 from psycopg import Connection
 from psycopg.types.json import Jsonb
 
 from .._core import JsonValue
-from .._rows import SearchSpecimensRow, decode_search_specimens
 from .._runtime import fetch_many
+
+
+@dataclass(frozen=True, slots=True)
+class SearchSpecimensRow:
+    id: int
+    title: str
+    label: str
+    meta: JsonValue
+
+
+def decode_search_specimens(row: Mapping[str, object]) -> SearchSpecimensRow:
+    return SearchSpecimensRow(
+        id=cast(int, row["id"]),
+        title=cast(str, row["title"]),
+        label=cast(str, row["label"]),
+        meta=cast(JsonValue, row["meta"]),
+    )
+
 
 SQL = """\
 -- many: nullable parameter via coalesce, jsonb containment parameter, and a

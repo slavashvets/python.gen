@@ -4,8 +4,11 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
+from dataclasses import dataclass
 from datetime import date, datetime
 from decimal import Decimal
+from typing import cast
 from uuid import UUID
 
 from psycopg import AsyncConnection
@@ -13,11 +16,86 @@ from psycopg.types.json import Json
 from psycopg.types.json import Jsonb
 
 from .._core import JsonValue
-from .._rows import InsertSpecimenRow, decode_insert_specimen
+from .._core import require_array
 from .._runtime import fetch_single
 from ..types.mood import Mood
 from ..types.mood import Mood
 from ..types.point_2_d import Point2D
+from ..types.mood import Mood
+from ..types.mood import Mood
+from ..types.point_2_d import Point2D
+
+
+@dataclass(frozen=True, slots=True)
+class InsertSpecimenRow:
+    id: int
+    pub_id: UUID
+    flag: bool
+    small: int
+    medium: int
+    large: int
+    ratio: float
+    precise: float
+    title: str
+    code: str
+    letter: str
+    born_on: date
+    created_at: datetime
+    amount: Decimal
+    blob: bytes
+    doc_json: JsonValue
+    doc_jsonb: JsonValue
+    maybe_text: str | None
+    maybe_int: int | None
+    maybe_uuid: UUID | None
+    maybe_ts: datetime | None
+    maybe_num: Decimal | None
+    tags: list[str | None]
+    related_ids: list[UUID | None] | None
+    grid: list[int | None] | None
+    feeling: Mood
+    moods: list[Mood | None] | None
+    origin: Point2D | None
+    label: str
+    rev: int
+    meta: JsonValue
+
+
+def decode_insert_specimen(row: Mapping[str, object]) -> InsertSpecimenRow:
+    return InsertSpecimenRow(
+        id=cast(int, row["id"]),
+        pub_id=cast(UUID, row["pub_id"]),
+        flag=cast(bool, row["flag"]),
+        small=cast(int, row["small"]),
+        medium=cast(int, row["medium"]),
+        large=cast(int, row["large"]),
+        ratio=cast(float, row["ratio"]),
+        precise=cast(float, row["precise"]),
+        title=cast(str, row["title"]),
+        code=cast(str, row["code"]),
+        letter=cast(str, row["letter"]),
+        born_on=cast(date, row["born_on"]),
+        created_at=cast(datetime, row["created_at"]),
+        amount=cast(Decimal, row["amount"]),
+        blob=cast(bytes, row["blob"]),
+        doc_json=cast(JsonValue, row["doc_json"]),
+        doc_jsonb=cast(JsonValue, row["doc_jsonb"]),
+        maybe_text=cast(str | None, row["maybe_text"]),
+        maybe_int=cast(int | None, row["maybe_int"]),
+        maybe_uuid=cast(UUID | None, row["maybe_uuid"]),
+        maybe_ts=cast(datetime | None, row["maybe_ts"]),
+        maybe_num=cast(Decimal | None, row["maybe_num"]),
+        tags=cast(list[str | None], row["tags"]),
+        related_ids=cast(list[UUID | None] | None, row["related_ids"]),
+        grid=cast(list[int | None] | None, row["grid"]),
+        feeling=Mood.pg_decode(row["feeling"]),
+        moods=None if row["moods"] is None else [None if v is None else Mood.pg_decode(v) for v in cast(list[str | None], require_array(row["moods"]))],
+        origin=None if row["origin"] is None else Point2D.pg_decode(row["origin"]),
+        label=cast(str, row["label"]),
+        rev=cast(int, row["rev"]),
+        meta=cast(JsonValue, row["meta"]),
+    )
+
 
 SQL = """\
 -- single row: insert ... returning the full type surface.
@@ -111,8 +189,8 @@ async def insert_specimen(
         "tags": tags,
         "related_ids": related_ids,
         "grid": grid,
-        "feeling": feeling._encode(),
-        "moods": None if moods is None else [None if x is None else x._encode() for x in moods],
-        "origin": None if origin is None else origin._encode(),
+        "feeling": feeling.pg_encode(),
+        "moods": None if moods is None else [None if x is None else x.pg_encode() for x in moods],
+        "origin": None if origin is None else origin.pg_encode(),
     }
     return await fetch_single(conn, _SQL, params, decode_insert_specimen)

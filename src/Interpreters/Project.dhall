@@ -22,10 +22,6 @@ let RegisterModule = ../Templates/RegisterModule.dhall
 
 let FacadeModule = ../Templates/FacadeModule.dhall
 
-let RowsModule = ../Templates/RowsModule.dhall
-
-let ImportSet = ../Structures/ImportSet.dhall
-
 let Surface = ../Structures/Surface.dhall
 
 let OnUnsupported = ../Structures/OnUnsupported.dhall
@@ -180,35 +176,6 @@ let combineOutputs =
                   InitModule.run { docstring = "Generated SQL statements." }
               }
 
-        -- The shared Row dataclasses + decode functions, imported by the
-        -- statement modules of whichever surface was selected.
-        let rowDefs =
-              Prelude.List.concatMap
-                QueryGen.Output
-                RowsModule.RowDef
-                ( \(query : QueryGen.Output) ->
-                    Prelude.Optional.toList RowsModule.RowDef query.rowDef
-                )
-                queries
-
-        let rowImports =
-              ImportSet.combineAll
-                ( Prelude.List.map
-                    QueryGen.Output
-                    ImportSet.Type
-                    (\(query : QueryGen.Output) -> query.rowImports)
-                    queries
-                )
-
-        let rowsFiles =
-              if    Prelude.List.null RowsModule.RowDef rowDefs
-              then  [] : List Lude.File.Type
-              else  [ { path = srcPrefix ++ "_rows.py"
-                      , content =
-                          RowsModule.run { rows = rowDefs, imports = rowImports }
-                      }
-                    ]
-
         let statementFiles =
               Prelude.List.map
                 QueryGen.Output
@@ -273,7 +240,6 @@ let combineOutputs =
         let allFiles =
                 staticFiles
               # registerFiles
-              # rowsFiles
               # typesInitFiles
               # typeFiles
               # statementFiles
