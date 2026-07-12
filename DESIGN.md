@@ -622,7 +622,7 @@ follow-up design question rather than something covered by the
 composite-array follow-up plan.
 
 This removal is scoped to this generator's own Dhall source. It does not
-unblock end-to-end regeneration: `demos/Exhaustive.dhall`/`mise run golden`
+unblock end-to-end regeneration: `fixtures/Exhaustive.dhall`/`mise run golden`
 still needs the pinned pgn binary (for its embedded fork Dhall) regardless,
 because gen-sdk's own `Fixtures` module independently relies on the same
 `Text/equal` builtin, and this change doesn't touch gen-sdk. A live
@@ -742,11 +742,11 @@ SQL rendering are largely driver-agnostic.
 
 CI runs two independent jobs (`.github/workflows/ci.yml`): `harness` (the
 pytest suite against a live Postgres) and `contract` (compiles gen-sdk's
-`Fixtures.Exhaustive` via `demos/Exhaustive.dhall` and runs basedpyright
+`Fixtures.Exhaustive` via `fixtures/Exhaustive.dhall` and runs basedpyright
 strict on the result). The `contract` job needs `nikita-volkov/dhall-directory-tree.github-action`,
 a Docker action bundling a forked Dhall evaluator; the local `dhall` CLI most
 people have installed is the standard dhall-lang build and does not
-understand `Text/equal`, so it cannot run `demos/Exhaustive.dhall` directly.
+understand `Text/equal`, so it cannot run `fixtures/Exhaustive.dhall` directly.
 Reproduce the `contract` job locally with [`act`](https://github.com/nektos/act)
 (not installed in this environment; `act -j contract` pulls the same pinned
 Docker action and runs the job as GitHub would).

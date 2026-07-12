@@ -110,3 +110,7 @@
   loud-abort behavior. `Skip` drops the smallest self-consistent unit (a
   statement or a custom type, cascading to anything that references it) and
   keeps generating the rest.
+- Renamed `demos/` to `fixtures/` (`demos/Exhaustive.dhall` is now
+  `fixtures/Exhaustive.dhall`), matching the `fixtures/` naming already used
+  by the other generators. `build.bash`'s `regenerate_demo_output` is now
+  `regenerate_fixture_output`. No behavior change.

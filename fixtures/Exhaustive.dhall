@@ -1,5 +1,5 @@
 -- Applies this generator to gen-sdk's shared cross-backend fixture project
--- (the same "music_catalogue" project java.gen's own demos/Exhaustive.dhall
+-- (the same "music_catalogue" project java.gen's own fixtures/Exhaustive.dhall
 -- exercises), so a Python client compiles from it and passes basedpyright
 -- strict. Pinned directly at gen-sdk's package.dhall, separately from
 -- src/Deps/Sdk.dhall: that file only imports gen-sdk's `package.dhall` `as
@@ -13,7 +13,7 @@
 -- Intended to be executed with:
 --
 -- ```bash
--- dhall to-directory-tree --file demos/Exhaustive.dhall --output <dir> --allow-path-separators
+-- dhall to-directory-tree --file fixtures/Exhaustive.dhall --output <dir> --allow-path-separators
 -- ```
 let Sdk = ../src/Deps/Sdk.dhall
 

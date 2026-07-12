@@ -141,7 +141,7 @@ jobs:
       - name: Generate output from Dhall
         uses: nikita-volkov/dhall-directory-tree.github-action@60a18dc647d6daea805263ea0fed7bb8011f3bcd # v2
         with:
-          dhall_file: demos/Exhaustive.dhall
+          dhall_file: fixtures/Exhaustive.dhall
           output_dir: contract-output
 
       - name: Assert the compile did not fail
