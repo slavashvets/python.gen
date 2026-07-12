@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from psycopg import Connection
 
-from ..._rows import GetSpecimenRow, decode_get_specimen
+from .._rows import GetSpecimenRow, decode_get_specimen
 from .._runtime import fetch_optional
 
 SQL = """\

@@ -6,9 +6,9 @@ from __future__ import annotations
 
 from psycopg import Connection
 
-from ..._rows import ListSpecimensByMoodsRow, decode_list_specimens_by_moods
+from .._rows import ListSpecimensByMoodsRow, decode_list_specimens_by_moods
 from .._runtime import fetch_many
-from ...types.mood import Mood
+from ..types.mood import Mood
 
 SQL = """\
 -- many: enum array parameter via = any($moods::mood[]); returns the enum array column.
@@ -28,6 +28,6 @@ def list_specimens_by_moods(
     moods: list[Mood | None] | None,
 ) -> list[ListSpecimensByMoodsRow]:
     params: dict[str, object] = {
-        "moods": moods,
+        "moods": None if moods is None else [None if x is None else x._encode() for x in moods],
     }
     return fetch_many(conn, _SQL, params, decode_list_specimens_by_moods)

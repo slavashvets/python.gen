@@ -29,6 +29,6 @@ async def insert_tagged_item(
 ) -> InsertTaggedItemRow:
     params: dict[str, object] = {
         "name": name,
-        "tag": (tag.value,),
+        "tag": tag._encode(),
     }
     return await fetch_single(conn, _SQL, params, decode_insert_tagged_item)

@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from psycopg import Connection
 
-from ..._rows import ListSpecimensKeywordColumnRow, decode_list_specimens_keyword_column
+from .._rows import ListSpecimensKeywordColumnRow, decode_list_specimens_keyword_column
 from .._runtime import fetch_many
 
 SQL = """\

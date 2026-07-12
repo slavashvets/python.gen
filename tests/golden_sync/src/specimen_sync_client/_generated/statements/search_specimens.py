@@ -7,8 +7,8 @@ from __future__ import annotations
 from psycopg import Connection
 from psycopg.types.json import Jsonb
 
-from ..._core import JsonValue
-from ..._rows import SearchSpecimensRow, decode_search_specimens
+from .._core import JsonValue
+from .._rows import SearchSpecimensRow, decode_search_specimens
 from .._runtime import fetch_many
 
 SQL = """\

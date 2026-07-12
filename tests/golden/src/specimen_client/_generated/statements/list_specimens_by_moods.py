@@ -28,6 +28,6 @@ async def list_specimens_by_moods(
     moods: list[Mood | None] | None,
 ) -> list[ListSpecimensByMoodsRow]:
     params: dict[str, object] = {
-        "moods": moods,
+        "moods": None if moods is None else [None if x is None else x._encode() for x in moods],
     }
     return await fetch_many(conn, _SQL, params, decode_list_specimens_by_moods)

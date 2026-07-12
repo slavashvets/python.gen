@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from psycopg import Connection
 
-from ..._rows import GetTaggedItemRow, decode_get_tagged_item
+from .._rows import GetTaggedItemRow, decode_get_tagged_item
 from .._runtime import fetch_optional
 
 SQL = """\

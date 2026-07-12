@@ -8,7 +8,7 @@ from uuid import UUID
 
 from psycopg import Connection
 
-from ..._rows import ListSpecimensByIdsRow, decode_list_specimens_by_ids
+from .._rows import ListSpecimensByIdsRow, decode_list_specimens_by_ids
 from .._runtime import fetch_many
 
 SQL = """\

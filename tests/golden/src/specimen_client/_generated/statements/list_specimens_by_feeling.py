@@ -28,6 +28,6 @@ async def list_specimens_by_feeling(
     feeling: Mood | None,
 ) -> list[ListSpecimensByFeelingRow]:
     params: dict[str, object] = {
-        "feeling": feeling,
+        "feeling": None if feeling is None else feeling._encode(),
     }
     return await fetch_many(conn, _SQL, params, decode_list_specimens_by_feeling)

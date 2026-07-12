@@ -6,9 +6,9 @@ from __future__ import annotations
 
 from psycopg import Connection
 
-from ..._rows import InsertTaggedItemRow, decode_insert_tagged_item
+from .._rows import InsertTaggedItemRow, decode_insert_tagged_item
 from .._runtime import fetch_single
-from ...types.tag_value import TagValue
+from ..types.tag_value import TagValue
 
 SQL = """\
 -- single row: insert exercising a single-field composite as a parameter and
@@ -29,6 +29,6 @@ def insert_tagged_item(
 ) -> InsertTaggedItemRow:
     params: dict[str, object] = {
         "name": name,
-        "tag": (tag.value,),
+        "tag": tag._encode(),
     }
     return fetch_single(conn, _SQL, params, decode_insert_tagged_item)

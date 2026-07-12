@@ -26,6 +26,7 @@ HERE = Path(__file__).resolve().parent
 SRC_DIR = HERE.parent / "src"
 FIXTURE_PROJECT = HERE / "fixture-project"
 GOLDEN_DIR = HERE / "golden"
+GOLDEN_DIR_SYNC = HERE / "golden_sync"
 
 # pgn creates its own temp database from this admin URL; we never write into the
 # target database itself. Default points at a local Postgres on the standard port;

@@ -6,9 +6,9 @@ from __future__ import annotations
 
 from psycopg import Connection
 
-from ..._rows import ListSpecimensByFeelingRow, decode_list_specimens_by_feeling
+from .._rows import ListSpecimensByFeelingRow, decode_list_specimens_by_feeling
 from .._runtime import fetch_many
-from ...types.mood import Mood
+from ..types.mood import Mood
 
 SQL = """\
 -- many: select with order by. Enum parameter ($feeling).
@@ -28,6 +28,6 @@ def list_specimens_by_feeling(
     feeling: Mood | None,
 ) -> list[ListSpecimensByFeelingRow]:
     params: dict[str, object] = {
-        "feeling": feeling,
+        "feeling": None if feeling is None else feeling._encode(),
     }
     return fetch_many(conn, _SQL, params, decode_list_specimens_by_feeling)

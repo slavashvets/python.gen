@@ -2,6 +2,6 @@
 # SPDX-FileCopyrightText: 2026 Viacheslav Shvets
 # SPDX-License-Identifier: MIT-0
 
-"""Generated SQL statements (sync)."""
+"""Generated database client for specimen-sync-client."""
 
 __all__: list[str] = []

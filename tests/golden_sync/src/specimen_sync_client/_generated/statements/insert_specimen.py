@@ -12,11 +12,12 @@ from psycopg import Connection
 from psycopg.types.json import Json
 from psycopg.types.json import Jsonb
 
-from ..._core import JsonValue
-from ..._rows import InsertSpecimenRow, decode_insert_specimen
+from .._core import JsonValue
+from .._rows import InsertSpecimenRow, decode_insert_specimen
 from .._runtime import fetch_single
-from ...types.mood import Mood
-from ...types.point_2_d import Point2D
+from ..types.mood import Mood
+from ..types.mood import Mood
+from ..types.point_2_d import Point2D
 
 SQL = """\
 -- single row: insert ... returning the full type surface.
@@ -110,8 +111,8 @@ def insert_specimen(
         "tags": tags,
         "related_ids": related_ids,
         "grid": grid,
-        "feeling": feeling,
-        "moods": moods,
-        "origin": None if origin is None else (origin.x, origin.y),
+        "feeling": feeling._encode(),
+        "moods": None if moods is None else [None if x is None else x._encode() for x in moods],
+        "origin": None if origin is None else origin._encode(),
     }
     return fetch_single(conn, _SQL, params, decode_insert_specimen)

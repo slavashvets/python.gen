@@ -37,8 +37,12 @@ run = "bench/generate.sh without"
 # see ci.yml), a single-artifact one at ~10 GB. The temp copy guarantees a
 # fresh resolve of the working-tree src/ (no stale freeze) and keeps pgn's
 # scratch files out of the repo.
+# Regenerates the "python" and "python-sync" artifacts: a full 7-artifact
+# generate peaks at ~31 GB RSS (memory goes to normalizing the generator
+# closure per artifact, see ci.yml), so this keeps only the two artifacts
+# golden actually needs instead of all 7.
 [tasks.golden]
-description = "Refresh tests/golden from the working-tree src/ (single-artifact run)"
+description = "Refresh tests/golden and tests/golden_sync from the working-tree src/"
 run = '''
 #!/usr/bin/env bash
 set -euo pipefail
@@ -61,6 +65,7 @@ cd "$tmp/fixture"
 pgn --database-url "${PGN_TEST_DATABASE_URL:-postgresql://postgres:postgres@localhost:5432/postgres?sslmode=disable}" generate
 rsync -a --delete artifacts/python/src/specimen_client/_generated/ "$root/tests/golden/src/specimen_client/_generated/"
 cp artifacts/python/src/specimen_client/__init__.py "$root/tests/golden/src/specimen_client/__init__.py"
-cp artifacts/python/src/specimen_client/sync/__init__.py "$root/tests/golden/src/specimen_client/sync/__init__.py"
-echo "golden refreshed; review with: git diff tests/golden"
+rsync -a --delete artifacts/python_sync/src/specimen_sync_client/_generated/ "$root/tests/golden_sync/src/specimen_sync_client/_generated/"
+cp artifacts/python_sync/src/specimen_sync_client/__init__.py "$root/tests/golden_sync/src/specimen_sync_client/__init__.py"
+echo "golden refreshed; review with: git diff tests/golden tests/golden_sync"
 '''
