@@ -1,5 +1,70 @@
 # Upcoming
 
+- **Breaking:** `emitSync` is gone. In its place, `sync : Optional Bool`
+  (default `False`) picks exactly one surface per generate — async or sync —
+  emitted at the same unified paths either way (no more `sync/` subdirectory,
+  no more second package-root facade). Previously `emitSync: true` added a
+  second, nested sync tree alongside the always-emitted async one; a project
+  that needs both surfaces now generates two artifacts against this same
+  `gen:` with different `packageName`s, one with `sync: true` and one
+  without. See `docs/plans/2026-07-12-configurable-sync-output.md` for the
+  full rationale and migration shape. `tests/golden_sync/` is a new committed
+  golden fixture (`specimen_sync_client`) exercising the sync surface
+  end-to-end (basedpyright strict + round-trip), alongside the existing
+  `tests/golden/` (`specimen_client`, now async-only).
+
+- `buildLookup` (`Interpreters/Project.dhall`) and, with it, this generator's
+  last dependency on pgn's fork-only `Text/equal` builtin are removed from
+  `src/`: custom-type decode/encode now dispatches through named
+  `_decode`/`_encode` methods generated onto each custom type's own Python
+  class (`CompositeModule.dhall`/`EnumModule.dhall`), called by name from
+  every reference site, instead of resolving classification and fields via a
+  project-wide structural search (`grep -rn "Text/equal" src` now returns
+  only two explanatory comments, zero invocations). Array (dims > 0)
+  decode/encode is built at the call site (`Member.dhall`/
+  `ParamsMember.dhall`) instead of a third per-type method, delegating only
+  the per-element transform to `_decode`/`_encode`: an earlier draft this
+  session added a per-type `_decode_array` to `EnumModule.dhall`, but it
+  could not express `elementIsNullable` (a per-column fact, not a per-type
+  one) and silently broke nullable-element enum-array decode and
+  enum-array param encode — both working, corpus-exercised paths — caught
+  by the final whole-branch review and fixed before merge. Behavior change:
+  because the call site is now kind-uniform, a 1-D composite-array column
+  or param is no longer rejected at Dhall-generation time the way it used
+  to be, and — unlike the `_decode_array` design it replaces — no longer
+  depends on `basedpyright strict` catching a missing method either, since
+  `_decode`/`_encode` genuinely exist on a composite class too. **This path
+  has not been exercised against real Postgres, and `tests/golden/` has NOT
+  been regenerated for this change this session** — the composite-array
+  fixture addition, its golden regeneration, and confirming actual Postgres
+  round-trip behavior are a known, deliberate gap in this commit, deferred
+  to a follow-up pass on a properly provisioned machine (see
+  `docs/plans/2026-07-11-reusable-custom-type-codecs.md`).
+  Separately, a composite field nesting another custom type is *also* no
+  longer rejected at generation time: the `nestedLookup = Absent` stub that
+  used to force it down the same loud-fail path is gone (it only existed
+  to satisfy `Member.run`'s old signature). This is not the same kind of
+  change as the composite-array case above, though — `CompositeModule.dhall`'s
+  `_decode`/`_encode` still do a blind flat `cast(tuple[...], src)`/splat,
+  unchanged by this refactor, and never recurse into the nested type's own
+  codec, so the field silently decodes/encodes wrong rather than being
+  caught by a type checker. Because the failure mode is `cast()`, which
+  suppresses type-checking on its argument by design, this is **not**
+  expected to be caught by `basedpyright strict`. It is a real, silent
+  architecture gap, flagged here as an open follow-up design question, not
+  a shipped or backstopped behavior change.
+- Migrated the generator's internal dependencies to `gen-contract` v4.0.1
+  and `gen-sdk` v2.0.0, adopting `Sdk.Sigs` in place of the local
+  `Algebras/` module, and restructured the repository layout to match the
+  pGenie generator architecture: implementation moved from `gen/` to
+  `src/`, the public entry point renamed from `gen/Gen.dhall` to
+  `src/package.dhall`, and the fixture driver moved from
+  `tests/Exhaustive.dhall` to `demos/Exhaustive.dhall`. No change to
+  generated output or the public Dhall interface (`artifacts.<name>.gen`
+  URLs pointing at a previously-released `resolved.dhall` are unaffected;
+  only the next release's URL path changes, from `.../gen/Gen.dhall` — the
+  unresolved source path some projects may reference directly instead of a
+  frozen release — to `.../src/package.dhall`).
 - The test harness now runs every pgn subprocess in its own process group under
   an RSS watchdog: a thread polls `ps -o rss=` every 2 s and, on breach of
   `PGN_MAX_RSS_GB` (default 40 GB), kills the whole group and fails the test with
@@ -45,3 +110,7 @@
   loud-abort behavior. `Skip` drops the smallest self-consistent unit (a
   statement or a custom type, cascading to anything that references it) and
   keeps generating the rest.
+- Renamed `demos/` to `fixtures/` (`demos/Exhaustive.dhall` is now
+  `fixtures/Exhaustive.dhall`), matching the `fixtures/` naming already used
+  by the other generators. `build.bash`'s `regenerate_demo_output` is now
+  `regenerate_fixture_output`. No behavior change.

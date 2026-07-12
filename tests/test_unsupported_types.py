@@ -24,14 +24,14 @@ from pathlib import Path
 
 import pytest
 
-from tests._harness import FIXTURE_PROJECT, GEN_DIR, HERE, run_pgn
+from tests._harness import FIXTURE_PROJECT, HERE, SRC_DIR, run_pgn
 
 HARNESS_ROOT = HERE.parent
 
 
 def test_unsupported_pg_type_fails_loudly(pgn_bin: str, pgn_admin_url: str, tmp_path: Path) -> None:
     root = tmp_path / "pygen"
-    _ = shutil.copytree(GEN_DIR, root / "gen")
+    _ = shutil.copytree(SRC_DIR, root / "src")
     project = shutil.copytree(FIXTURE_PROJECT, root / "tests" / "fixture-project")
     (project / "freeze1.pgn.yaml").unlink(missing_ok=True)
     shutil.rmtree(project / "artifacts", ignore_errors=True)
@@ -51,7 +51,7 @@ def test_unsupported_pg_type_fails_loudly(pgn_bin: str, pgn_admin_url: str, tmp_
 
 def test_json_array_param_fails_loudly(pgn_bin: str, pgn_admin_url: str, tmp_path: Path) -> None:
     root = tmp_path / "pygen"
-    _ = shutil.copytree(GEN_DIR, root / "gen")
+    _ = shutil.copytree(SRC_DIR, root / "src")
     project = shutil.copytree(FIXTURE_PROJECT, root / "tests" / "fixture-project")
     (project / "freeze1.pgn.yaml").unlink(missing_ok=True)
     shutil.rmtree(project / "artifacts", ignore_errors=True)
@@ -66,7 +66,7 @@ def test_json_array_param_fails_loudly(pgn_bin: str, pgn_admin_url: str, tmp_pat
         "postgres: 18\n"
         "artifacts:\n"
         "  python:\n"
-        "    gen: ../../gen/Gen.dhall\n"
+        "    gen: ../../src/package.dhall\n"
         "    config:\n"
         "      onUnsupported: Fail\n"
     )
@@ -104,7 +104,7 @@ def test_skip_unsupported_drops_offending_units_and_cascades(
     golden package is held to.
     """
     root = tmp_path / "pygen"
-    _ = shutil.copytree(GEN_DIR, root / "gen")
+    _ = shutil.copytree(SRC_DIR, root / "src")
     project = shutil.copytree(FIXTURE_PROJECT, root / "tests" / "fixture-project")
     (project / "freeze1.pgn.yaml").unlink(missing_ok=True)
     shutil.rmtree(project / "artifacts", ignore_errors=True)
@@ -129,7 +129,7 @@ def test_skip_unsupported_drops_offending_units_and_cascades(
         "postgres: 18\n"
         "artifacts:\n"
         "  python:\n"
-        "    gen: ../../gen/Gen.dhall\n"
+        "    gen: ../../src/package.dhall\n"
         "    config:\n"
         "      onUnsupported: Skip\n"
     )
@@ -177,7 +177,6 @@ def test_skip_unsupported_drops_offending_units_and_cascades(
         assert (src / "types" / f"{name}.py").is_file(), f"{name} should not have been skipped"
 
     facade = (package_src / "__init__.py").read_text()
-    rows = (src / "_rows.py").read_text()
     register = (src / "_register.py").read_text()
     types_init = (src / "types" / "__init__.py").read_text()
     for orphan in (
@@ -188,7 +187,6 @@ def test_skip_unsupported_drops_offending_units_and_cascades(
         "WrappedPoint",
     ):
         assert orphan not in facade, f"facade references skipped {orphan}"
-        assert orphan not in rows, f"_rows references skipped {orphan}"
         assert orphan not in register, f"_register references skipped {orphan}"
         assert orphan not in types_init, f"types/__init__ references skipped {orphan}"
 
@@ -200,7 +198,6 @@ def test_skip_unsupported_drops_offending_units_and_cascades(
                 del sys.modules[name]
         importlib.import_module("fixture")
         importlib.import_module("fixture._generated._register")
-        importlib.import_module("fixture._generated._rows")
         for name in kept_statements:
             importlib.import_module(f"fixture._generated.statements.{name}")
     finally:

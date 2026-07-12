@@ -102,6 +102,18 @@ and the new stderr output only appears when warnings are non-empty.
 
 ## 3. gen-sdk: `kind` tag or `Natural` index on `Scalar.Custom`
 
+**WITHDRAWN.** `buildLookup`'s only consumer of the fork-only `Text/equal`
+builtin was resolved locally, with no gen-sdk contract change needed:
+custom-type decode/encode now dispatches through named
+`_decode`/`_decode_array`/`_encode` methods generated onto each custom
+type's own Python class (`CompositeModule.dhall`/`EnumModule.dhall`),
+called by name from every reference site, instead of resolving
+classification/fields via a project-wide structural search. `buildLookup`
+and `Structures/CustomKind.dhall` are deleted; see
+`docs/plans/2026-07-11-reusable-custom-type-codecs.md` and DESIGN.md
+section 12. This section is kept for the historical record of why the ask
+existed, not as an open request.
+
 ### Motivation
 
 This is the ask already planned in DESIGN.md, section 12. The generator's

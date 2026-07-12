@@ -23,9 +23,10 @@ from psycopg.conninfo import conninfo_to_dict
 DEFAULT_MAX_RSS_GB = 40.0
 
 HERE = Path(__file__).resolve().parent
-GEN_DIR = HERE.parent / "gen"
+SRC_DIR = HERE.parent / "src"
 FIXTURE_PROJECT = HERE / "fixture-project"
 GOLDEN_DIR = HERE / "golden"
+GOLDEN_DIR_SYNC = HERE / "golden_sync"
 
 # pgn creates its own temp database from this admin URL; we never write into the
 # target database itself. Default points at a local Postgres on the standard port;
