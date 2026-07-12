@@ -22,7 +22,7 @@ let Compiled = Lude.Compiled
 let Config =
       { packageName : Text
       , importName : Text
-      , emitSync : Bool
+      , sync : Bool
       , onUnsupported : OnUnsupported.Mode
       , rowClassName : Text
       }
@@ -91,7 +91,7 @@ let rowsOutput =
                   }
               )
               ( ResultColumns.run
-                  config.{ packageName, importName, emitSync, onUnsupported }
+                  config.{ packageName, importName, sync, onUnsupported }
                   columns
               )
 

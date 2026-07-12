@@ -25,7 +25,7 @@ let StatementModule = ../Templates/StatementModule.dhall
 let Config =
       { packageName : Text
       , importName : Text
-      , emitSync : Bool
+      , sync : Bool
       , onUnsupported : OnUnsupported.Mode
       }
 
@@ -37,7 +37,7 @@ let Input = Model.Query
 
 -- A query contributes a shared Row (assembled into `_rows.py` by Project) plus a
 -- thin statement module per surface. asyncModule is always emitted; syncModule is
--- emitted only when config.emitSync. rowImports are the result-column imports,
+-- emitted only when config.sync. rowImports are the result-column imports,
 -- folded into `_rows.py`.
 let Output =
       { functionName : Text

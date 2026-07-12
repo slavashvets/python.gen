@@ -11,7 +11,7 @@ let OnUnsupported = ../Structures/OnUnsupported.dhall
 let Config =
       { packageName : Text
       , importName : Text
-      , emitSync : Bool
+      , sync : Bool
       , onUnsupported : OnUnsupported.Mode
       }
 

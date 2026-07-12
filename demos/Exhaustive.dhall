@@ -26,7 +26,7 @@ let project = Sdk.Fixtures.Exhaustive
 let config =
       Some
         { packageName = None Text
-        , emitSync = Some True
+        , sync = Some True
         , onUnsupported = Some OnUnsupported.Mode.Skip
         }
 

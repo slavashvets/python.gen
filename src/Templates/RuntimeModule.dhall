@@ -81,7 +81,7 @@ let content =
               _ = await cur.execute(sql, params)
       ''
 
--- The sync mirror, emitted at _generated/sync/_runtime.py when emitSync. The
+-- The sync mirror, emitted at _generated/sync/_runtime.py when config.sync is True. The
 -- five helpers are the same shape with `def`/`Connection`/`with`/no-`await`.
 -- JsonValue/NoRowError/require_array are re-exported from _core (two levels up)
 -- so both surfaces share one canonical identity rather than two equal-but-

@@ -35,11 +35,11 @@ let Report = { path : List Text, message : Text }
 -- The generator's public Config: every field is independently Optional, so a
 -- project may omit the whole `config:` block or any subset of its keys.
 -- `run` below resolves the fallbacks itself (packageName from the project
--- name, emitSync off, onUnsupported Fail); there is no separate config type
+-- name, sync off, onUnsupported Fail); there is no separate config type
 -- or resolve step between package.dhall and here.
 let Config =
       { packageName : Optional Text
-      , emitSync : Optional Bool
+      , sync : Optional Bool
       , onUnsupported : Optional OnUnsupported.Mode
       }
 
@@ -48,7 +48,7 @@ let Config =
 let ResolvedConfig =
       { packageName : Text
       , importName : Text
-      , emitSync : Bool
+      , sync : Bool
       , onUnsupported : OnUnsupported.Mode
       }
 
@@ -269,7 +269,7 @@ let combineOutputs =
               else  [] : List Lude.File.Type
 
         -- The sync surface mirrors the async one under `sync/`, gated on
-        -- config.emitSync. It reuses the shared `_rows.py` and `types/`, so only
+        -- config.sync. It reuses the shared `_rows.py` and `types/`, so only
         -- the I/O wrappers (statements, runtime, register) and the sync facade
         -- are sync-specific.
         let syncStatementFiles =
@@ -322,7 +322,7 @@ let combineOutputs =
               }
 
         let syncFiles =
-              if    config.emitSync
+              if    config.sync
               then    [ syncSubpackageInit
                       , syncRuntime
                       , syncStatementsInit
@@ -377,10 +377,10 @@ let run =
                 (\(t : Text) -> t)
                 input.name.inKebabCase
 
-        let emitSync =
+        let sync =
               Prelude.Optional.fold
                 Bool
-                config.emitSync
+                config.sync
                 Bool
                 (\(b : Bool) -> b)
                 False
@@ -397,7 +397,7 @@ let run =
 
         let resolvedConfig
             : ResolvedConfig
-            = { packageName, importName, emitSync, onUnsupported }
+            = { packageName, importName, sync, onUnsupported }
 
         let skip = merge { Fail = False, Skip = True } resolvedConfig.onUnsupported
 
