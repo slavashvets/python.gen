@@ -84,7 +84,7 @@ jobs:
 
       - name: Resolve Dhall
         id: resolve
-        uses: nikita-volkov/dhall-resolve.github-action@7caaf1fdb40ac864bc02e37575f577ee084713a8 # v3
+        uses: nikita-volkov/dhall-resolve.github-action@b7a346816b48a0f58282855a56e19b2a2c77f35d # v3
         with:
           file: gen/Gen.dhall
           minify: true
