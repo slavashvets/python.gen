@@ -52,13 +52,10 @@ let render =
       \(result : ResultModule.Output) ->
       \(fragments : QueryFragmentsModule.Output) ->
       \(params : List ParamsMember.Output) ->
-        -- The function name is also the module filename and the facade import name;
-        -- a query named like a Python keyword would emit `def class(...)`, a module
-        -- `class.py`, and `from ... import class` (all SyntaxErrors), so sanitize it
-        -- like params and result columns. SQL/dict/row lookups key off raw names.
-        let functionName = PyIdent.pySafeName input.name.inSnakeCase
-
-        let decodeName = "decode_${functionName}"
+        -- The function name is also the module filename and facade import name, so
+        -- protect both Python syntax and the private globals in a statement module.
+        -- SQL/dict/row lookups still key off raw names.
+        let functionName = PyIdent.querySafeName input.name.inSnakeCase
 
         let paramSigLines =
               Prelude.List.map
@@ -100,7 +97,6 @@ let render =
                     { className = rc.name
                     , fieldsBlock = rc.fieldsBlock
                     , decodeBlock = rc.decodeBlock
-                    , decodeName
                     }
                 )
                 result.rowClass
@@ -121,7 +117,6 @@ let render =
                 , callsDecode = result.callsDecode
                 , sqlLiteral = fragments.sqlLiteral
                 , rowDef
-                , decodeName
                 , paramSigLines
                 , paramDictEntries
                 , imports = mergedImports

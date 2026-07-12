@@ -17,7 +17,6 @@ let RowDef =
       { className : Text
       , fieldsBlock : Text
       , decodeBlock : Text
-      , decodeName : Text
       }
 
 -- Prefix every line (including the first) with `n` spaces, leaving blank lines
@@ -40,7 +39,7 @@ let renderRow
         ++  indentAll 4 row.fieldsBlock
         ++  "\n\n\n"
         ++  "def "
-        ++  row.decodeName
+        ++  "_decode_row"
         ++  "(row: Mapping[str, object]) -> "
         ++  row.className
         ++  ":\n"
@@ -82,7 +81,6 @@ let Params =
       , callsDecode : Bool
       , sqlLiteral : Text
       , rowDef : Optional RowDef
-      , decodeName : Text
       , paramSigLines : List Text
       , paramDictEntries : List Text
       , imports : ImportSet.Type
@@ -112,7 +110,8 @@ let datetimeImport
 -- the shared name directly, not through the _runtime re-export).
 let runtimeImport
     : Text -> Text
-    = \(helperName : Text) -> "from .._runtime import " ++ helperName
+    = \(helperName : Text) ->
+        "from .._runtime import ${helperName} as _${helperName}"
 
 let coreImport
     : Text -> Bool -> List Text
@@ -146,7 +145,7 @@ let renderImports
                 # importLineIf rowIsPresent "from dataclasses import dataclass"
                 # datetimeImport imports
                 # importLineIf imports.decimal "from decimal import Decimal"
-                # importLineIf imports.needsCast "from typing import cast"
+                # importLineIf imports.needsCast "from typing import cast as _cast"
                 # importLineIf imports.uuid "from uuid import UUID"
 
         let psycopgBlock =
@@ -162,7 +161,7 @@ let renderImports
                   coreImport params.surface.corePrefix imports.jsonValue
                 # importLineIf
                     imports.enumArray
-                    "from ${params.surface.corePrefix} import require_array"
+                    "from ${params.surface.corePrefix} import require_array as _require_array"
                 # [ runtimeImport params.helperName ]
                 # customImportLines params.surface.typesPrefix imports
 
@@ -232,8 +231,8 @@ let renderCall
         let await = params.surface.awaitKw
 
         in  if    params.callsDecode
-            then  "return ${await}${params.helperName}(conn, _SQL, params, ${params.decodeName})"
-            else  "return ${await}${params.helperName}(conn, _SQL, params)"
+            then  "return ${await}_${params.helperName}(conn, _SQL, params, _decode_row)"
+            else  "return ${await}_${params.helperName}(conn, _SQL, params)"
 
 in  Sdk.Sigs.template
       Params

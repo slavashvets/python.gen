@@ -6,11 +6,11 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import cast
+from typing import cast as _cast
 
 from psycopg import AsyncConnection
 
-from .._runtime import fetch_optional
+from .._runtime import fetch_optional as _fetch_optional
 from ..types.tag_value import TagValue
 
 
@@ -21,10 +21,10 @@ class GetTaggedItemRow:
     tag: TagValue
 
 
-def decode_get_tagged_item(row: Mapping[str, object]) -> GetTaggedItemRow:
+def _decode_row(row: Mapping[str, object]) -> GetTaggedItemRow:
     return GetTaggedItemRow(
-        id=cast(int, row["id"]),
-        name=cast(str, row["name"]),
+        id=_cast(int, row["id"]),
+        name=_cast(str, row["name"]),
         tag=TagValue.pg_decode(row["tag"]),
     )
 
@@ -50,4 +50,4 @@ async def get_tagged_item(
     params: dict[str, object] = {
         "id": id,
     }
-    return await fetch_optional(conn, _SQL, params, decode_get_tagged_item)
+    return await _fetch_optional(conn, _SQL, params, _decode_row)

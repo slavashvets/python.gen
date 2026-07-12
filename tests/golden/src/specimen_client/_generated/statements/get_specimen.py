@@ -8,13 +8,13 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import date, datetime
 from decimal import Decimal
-from typing import cast
+from typing import cast as _cast
 from uuid import UUID
 
 from psycopg import AsyncConnection
 
 from .._core import JsonValue
-from .._runtime import fetch_optional
+from .._runtime import fetch_optional as _fetch_optional
 from ..types.mood import Mood
 from ..types.point_2_d import Point2D
 
@@ -53,38 +53,38 @@ class GetSpecimenRow:
     meta: JsonValue
 
 
-def decode_get_specimen(row: Mapping[str, object]) -> GetSpecimenRow:
+def _decode_row(row: Mapping[str, object]) -> GetSpecimenRow:
     return GetSpecimenRow(
-        id=cast(int, row["id"]),
-        pub_id=cast(UUID, row["pub_id"]),
-        flag=cast(bool, row["flag"]),
-        small=cast(int, row["small"]),
-        medium=cast(int, row["medium"]),
-        large=cast(int, row["large"]),
-        ratio=cast(float, row["ratio"]),
-        precise=cast(float, row["precise"]),
-        title=cast(str, row["title"]),
-        code=cast(str, row["code"]),
-        letter=cast(str, row["letter"]),
-        born_on=cast(date, row["born_on"]),
-        created_at=cast(datetime, row["created_at"]),
-        amount=cast(Decimal, row["amount"]),
-        blob=cast(bytes, row["blob"]),
-        doc_json=cast(JsonValue, row["doc_json"]),
-        doc_jsonb=cast(JsonValue, row["doc_jsonb"]),
-        maybe_text=cast(str | None, row["maybe_text"]),
-        maybe_int=cast(int | None, row["maybe_int"]),
-        maybe_uuid=cast(UUID | None, row["maybe_uuid"]),
-        maybe_ts=cast(datetime | None, row["maybe_ts"]),
-        maybe_num=cast(Decimal | None, row["maybe_num"]),
-        tags=cast(list[str | None], row["tags"]),
-        related_ids=cast(list[UUID | None] | None, row["related_ids"]),
-        grid=cast(list[int | None] | None, row["grid"]),
+        id=_cast(int, row["id"]),
+        pub_id=_cast(UUID, row["pub_id"]),
+        flag=_cast(bool, row["flag"]),
+        small=_cast(int, row["small"]),
+        medium=_cast(int, row["medium"]),
+        large=_cast(int, row["large"]),
+        ratio=_cast(float, row["ratio"]),
+        precise=_cast(float, row["precise"]),
+        title=_cast(str, row["title"]),
+        code=_cast(str, row["code"]),
+        letter=_cast(str, row["letter"]),
+        born_on=_cast(date, row["born_on"]),
+        created_at=_cast(datetime, row["created_at"]),
+        amount=_cast(Decimal, row["amount"]),
+        blob=_cast(bytes, row["blob"]),
+        doc_json=_cast(JsonValue, row["doc_json"]),
+        doc_jsonb=_cast(JsonValue, row["doc_jsonb"]),
+        maybe_text=_cast(str | None, row["maybe_text"]),
+        maybe_int=_cast(int | None, row["maybe_int"]),
+        maybe_uuid=_cast(UUID | None, row["maybe_uuid"]),
+        maybe_ts=_cast(datetime | None, row["maybe_ts"]),
+        maybe_num=_cast(Decimal | None, row["maybe_num"]),
+        tags=_cast(list[str | None], row["tags"]),
+        related_ids=_cast(list[UUID | None] | None, row["related_ids"]),
+        grid=_cast(list[int | None] | None, row["grid"]),
         feeling=Mood.pg_decode(row["feeling"]),
         origin=None if row["origin"] is None else Point2D.pg_decode(row["origin"]),
-        label=cast(str, row["label"]),
-        rev=cast(int, row["rev"]),
-        meta=cast(JsonValue, row["meta"]),
+        label=_cast(str, row["label"]),
+        rev=_cast(int, row["rev"]),
+        meta=_cast(JsonValue, row["meta"]),
     )
 
 
@@ -115,4 +115,4 @@ async def get_specimen(
     params: dict[str, object] = {
         "id": id,
     }
-    return await fetch_optional(conn, _SQL, params, decode_get_specimen)
+    return await _fetch_optional(conn, _SQL, params, _decode_row)

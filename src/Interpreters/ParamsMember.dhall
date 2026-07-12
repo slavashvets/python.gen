@@ -23,20 +23,6 @@ let Input = Model.Member
 
 let PyIdent = ../Structures/PyIdent.dhall
 
--- Identifiers the statement template hardcodes around the splatted params: the
--- receiver `conn` and the locals `sql`/`params`/`decode`/`cur`/`row`. A param
--- named like one of these would collide (e.g. a duplicate `conn` argument), so
--- they are sanitized alongside the Python keywords.
-let reservedNames =
-      [ "conn", "sql", "params", "decode", "cur", "row" ]
-
--- A SQL placeholder may be spelled as a Python reserved word (e.g. $class, $from)
--- or clash with a template-reserved name (e.g. $conn). Suffix an underscore so the
--- emitted signature and bind variable are valid Python; the params-dict key and
--- the %(name)s placeholder keep the raw name (see Query.dhall), so psycopg still
--- binds by the original name.
-let pySafeName = PyIdent.sanitizeAgainst (PyIdent.pythonKeywords # reservedNames)
-
 let Output =
       { fieldName : Text
       , pgName : Text
@@ -234,7 +220,7 @@ let run =
       \(config : Config) ->
       \(lookup : CustomKind.Lookup) ->
       \(input : Input) ->
-        let fieldName = pySafeName input.name.inSnakeCase
+        let fieldName = PyIdent.parameterSafeName input.name.inSnakeCase
 
         let needsJsonbImport = isJsonbScalar input.value
 

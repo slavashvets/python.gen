@@ -6,13 +6,13 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import cast
+from typing import cast as _cast
 
 from psycopg import AsyncConnection
 from psycopg.types.json import Jsonb
 
 from .._core import JsonValue
-from .._runtime import fetch_many
+from .._runtime import fetch_many as _fetch_many
 
 
 @dataclass(frozen=True, slots=True)
@@ -23,12 +23,12 @@ class SearchSpecimensRow:
     meta: JsonValue
 
 
-def decode_search_specimens(row: Mapping[str, object]) -> SearchSpecimensRow:
+def _decode_row(row: Mapping[str, object]) -> SearchSpecimensRow:
     return SearchSpecimensRow(
-        id=cast(int, row["id"]),
-        title=cast(str, row["title"]),
-        label=cast(str, row["label"]),
-        meta=cast(JsonValue, row["meta"]),
+        id=_cast(int, row["id"]),
+        title=_cast(str, row["title"]),
+        label=_cast(str, row["label"]),
+        meta=_cast(JsonValue, row["meta"]),
     )
 
 
@@ -61,4 +61,4 @@ async def search_specimens(
         "meta_filter": None if meta_filter is None else Jsonb(meta_filter),
         "label": label,
     }
-    return await fetch_many(conn, _SQL, params, decode_search_specimens)
+    return await _fetch_many(conn, _SQL, params, _decode_row)

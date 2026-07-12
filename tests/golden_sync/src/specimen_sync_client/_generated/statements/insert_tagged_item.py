@@ -6,11 +6,11 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import cast
+from typing import cast as _cast
 
 from psycopg import Connection
 
-from .._runtime import fetch_single
+from .._runtime import fetch_single as _fetch_single
 from ..types.tag_value import TagValue
 
 
@@ -21,10 +21,10 @@ class InsertTaggedItemRow:
     tag: TagValue
 
 
-def decode_insert_tagged_item(row: Mapping[str, object]) -> InsertTaggedItemRow:
+def _decode_row(row: Mapping[str, object]) -> InsertTaggedItemRow:
     return InsertTaggedItemRow(
-        id=cast(int, row["id"]),
-        name=cast(str, row["name"]),
+        id=_cast(int, row["id"]),
+        name=_cast(str, row["name"]),
         tag=TagValue.pg_decode(row["tag"]),
     )
 
@@ -50,4 +50,4 @@ def insert_tagged_item(
         "name": name,
         "tag": tag.pg_encode(),
     }
-    return fetch_single(conn, _SQL, params, decode_insert_tagged_item)
+    return _fetch_single(conn, _SQL, params, _decode_row)

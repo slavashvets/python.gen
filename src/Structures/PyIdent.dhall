@@ -41,9 +41,9 @@ let pythonKeywords =
       , "yield"
       ]
 
--- Suffix an underscore when `name` collides with one of `reserved`. Callers keep
--- the raw name for the SQL placeholder / dict key / row[...] lookup; only the
--- Python identifier is sanitized.
+-- Add the caller's suffix when `name` collides with one of `reserved`. Callers
+-- keep the raw name for the SQL placeholder / dict key / row[...] lookup; only
+-- the Python identifier is sanitized.
 --
 -- Equality without Text/equal: java.gen's escapeJavaKeyword delimiter trick does
 -- not apply here because pgn's embedded Text/replace misses needles spanning a
@@ -60,7 +60,8 @@ let pythonKeywords =
 -- every reserved word and blows up exponentially.
 let markTrue = "0000000000000000000000000001"
 
-let sanitizeAgainst =
+let suffixAgainst =
+      \(suffix : Text) ->
       \(reserved : List Text) ->
       \(name : Text) ->
         List/fold
@@ -73,12 +74,59 @@ let sanitizeAgainst =
 
               let finalNeedle = Text/replace signal name markTrue
 
-              in  Text/replace finalNeedle (name ++ "_") acc
+              in  Text/replace finalNeedle (name ++ suffix) acc
           )
           name
+
+let sanitizeAgainst = suffixAgainst "_"
 
 let pySafeName
     : Text -> Text
     = sanitizeAgainst pythonKeywords
 
-in  { pythonKeywords, sanitizeAgainst, pySafeName }
+let moduleReservedNames =
+      [ "_cast"
+      , "_require_array"
+      , "_fetch_optional"
+      , "_fetch_single"
+      , "_fetch_many"
+      , "_execute_rows_affected"
+      , "_execute_void"
+      , "_decode_row"
+      , "_types"
+      , "date"
+      , "datetime"
+      , "time"
+      , "timedelta"
+      ]
+
+let parameterReservedNames =
+      [ "conn"
+      , "sql"
+      , "params"
+      , "decode"
+      , "cur"
+      , "row"
+      , "_decode_row"
+      , "_fetch_optional"
+      , "_fetch_single"
+      , "_fetch_many"
+      , "_execute_rows_affected"
+      , "_execute_void"
+      ]
+
+let parameterSafeName
+    : Text -> Text
+    = sanitizeAgainst (pythonKeywords # parameterReservedNames)
+
+let querySafeName =
+      \(name : Text) -> suffixAgainst "_query" moduleReservedNames (pySafeName name)
+
+in  { pythonKeywords
+    , sanitizeAgainst
+    , pySafeName
+    , moduleReservedNames
+    , parameterReservedNames
+    , parameterSafeName
+    , querySafeName
+    }

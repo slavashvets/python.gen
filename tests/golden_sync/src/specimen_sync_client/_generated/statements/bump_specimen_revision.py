@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from psycopg import Connection
 
-from .._runtime import execute_rows_affected
+from .._runtime import execute_rows_affected as _execute_rows_affected
 
 SQL = """\
 -- rows_affected: UPDATE without RETURNING, keyed by id; exercises the rowcount
@@ -27,4 +27,4 @@ def bump_specimen_revision(
     params: dict[str, object] = {
         "id": id,
     }
-    return execute_rows_affected(conn, _SQL, params)
+    return _execute_rows_affected(conn, _SQL, params)

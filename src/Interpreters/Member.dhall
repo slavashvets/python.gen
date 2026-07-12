@@ -56,7 +56,7 @@ let run =
                 let baseImports = value.imports
 
                 let passthroughDecode =
-                      \(src : Text) -> "cast(${castTarget}, ${src})"
+                      \(src : Text) -> "_cast(${castTarget}, ${src})"
 
                 in  merge
                       { Passthrough =
@@ -148,7 +148,7 @@ let run =
                                                                 arrayImports
                                                                 ( wrapNullable
                                                                     ( \(src : Text) ->
-                                                                        "[${elemDecode} for v in cast(${elemCast}, require_array(${src}))]"
+                                                                        "[${elemDecode} for v in _cast(${elemCast}, _require_array(${src}))]"
                                                                     )
                                                                 )
                                                             )

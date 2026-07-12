@@ -6,12 +6,12 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import cast
+from typing import cast as _cast
 from uuid import UUID
 
 from psycopg import AsyncConnection
 
-from .._runtime import fetch_many
+from .._runtime import fetch_many as _fetch_many
 from ..types.mood import Mood
 
 
@@ -23,12 +23,12 @@ class ListSpecimensByIdsRow:
     title: str
 
 
-def decode_list_specimens_by_ids(row: Mapping[str, object]) -> ListSpecimensByIdsRow:
+def _decode_row(row: Mapping[str, object]) -> ListSpecimensByIdsRow:
     return ListSpecimensByIdsRow(
-        id=cast(int, row["id"]),
-        pub_id=cast(UUID, row["pub_id"]),
+        id=_cast(int, row["id"]),
+        pub_id=_cast(UUID, row["pub_id"]),
         feeling=Mood.pg_decode(row["feeling"]),
-        title=cast(str, row["title"]),
+        title=_cast(str, row["title"]),
     )
 
 
@@ -52,4 +52,4 @@ async def list_specimens_by_ids(
     params: dict[str, object] = {
         "pub_ids": pub_ids,
     }
-    return await fetch_many(conn, _SQL, params, decode_list_specimens_by_ids)
+    return await _fetch_many(conn, _SQL, params, _decode_row)

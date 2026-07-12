@@ -6,11 +6,11 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import cast
+from typing import cast as _cast
 
 from psycopg import AsyncConnection
 
-from .._runtime import fetch_many
+from .._runtime import fetch_many as _fetch_many
 
 
 @dataclass(frozen=True, slots=True)
@@ -19,10 +19,10 @@ class ListSpecimensKeywordColumnRow:
     class_: str
 
 
-def decode_list_specimens_keyword_column(row: Mapping[str, object]) -> ListSpecimensKeywordColumnRow:
+def _decode_row(row: Mapping[str, object]) -> ListSpecimensKeywordColumnRow:
     return ListSpecimensKeywordColumnRow(
-        id=cast(int, row["id"]),
-        class_=cast(str, row["class"]),
+        id=_cast(int, row["id"]),
+        class_=_cast(str, row["class"]),
     )
 
 
@@ -46,4 +46,4 @@ async def list_specimens_keyword_column(
     conn: AsyncConnection[object],
 ) -> list[ListSpecimensKeywordColumnRow]:
     params: dict[str, object] = {}
-    return await fetch_many(conn, _SQL, params, decode_list_specimens_keyword_column)
+    return await _fetch_many(conn, _SQL, params, _decode_row)

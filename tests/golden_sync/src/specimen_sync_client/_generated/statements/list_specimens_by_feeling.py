@@ -6,13 +6,13 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import cast
+from typing import cast as _cast
 from uuid import UUID
 
 from psycopg import Connection
 
 from .._core import JsonValue
-from .._runtime import fetch_many
+from .._runtime import fetch_many as _fetch_many
 from ..types.mood import Mood
 from ..types.point_2_d import Point2D
 
@@ -30,17 +30,17 @@ class ListSpecimensByFeelingRow:
     meta: JsonValue
 
 
-def decode_list_specimens_by_feeling(row: Mapping[str, object]) -> ListSpecimensByFeelingRow:
+def _decode_row(row: Mapping[str, object]) -> ListSpecimensByFeelingRow:
     return ListSpecimensByFeelingRow(
-        id=cast(int, row["id"]),
-        pub_id=cast(UUID, row["pub_id"]),
+        id=_cast(int, row["id"]),
+        pub_id=_cast(UUID, row["pub_id"]),
         feeling=Mood.pg_decode(row["feeling"]),
-        title=cast(str, row["title"]),
-        label=cast(str, row["label"]),
-        rev=cast(int, row["rev"]),
+        title=_cast(str, row["title"]),
+        label=_cast(str, row["label"]),
+        rev=_cast(int, row["rev"]),
         origin=None if row["origin"] is None else Point2D.pg_decode(row["origin"]),
-        tags=cast(list[str | None], row["tags"]),
-        meta=cast(JsonValue, row["meta"]),
+        tags=_cast(list[str | None], row["tags"]),
+        meta=_cast(JsonValue, row["meta"]),
     )
 
 
@@ -64,4 +64,4 @@ def list_specimens_by_feeling(
     params: dict[str, object] = {
         "feeling": None if feeling is None else feeling.pg_encode(),
     }
-    return fetch_many(conn, _SQL, params, decode_list_specimens_by_feeling)
+    return _fetch_many(conn, _SQL, params, _decode_row)

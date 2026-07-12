@@ -6,13 +6,13 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import cast
+from typing import cast as _cast
 from uuid import UUID
 
 from psycopg import AsyncConnection
 
-from .._core import require_array
-from .._runtime import fetch_many
+from .._core import require_array as _require_array
+from .._runtime import fetch_many as _fetch_many
 from ..types.mood import Mood
 
 
@@ -25,13 +25,13 @@ class ListSpecimensByMoodsRow:
     title: str
 
 
-def decode_list_specimens_by_moods(row: Mapping[str, object]) -> ListSpecimensByMoodsRow:
+def _decode_row(row: Mapping[str, object]) -> ListSpecimensByMoodsRow:
     return ListSpecimensByMoodsRow(
-        id=cast(int, row["id"]),
-        pub_id=cast(UUID, row["pub_id"]),
+        id=_cast(int, row["id"]),
+        pub_id=_cast(UUID, row["pub_id"]),
         feeling=Mood.pg_decode(row["feeling"]),
-        moods=None if row["moods"] is None else [None if v is None else Mood.pg_decode(v) for v in cast(list[str | None], require_array(row["moods"]))],
-        title=cast(str, row["title"]),
+        moods=None if row["moods"] is None else [None if v is None else Mood.pg_decode(v) for v in _cast(list[str | None], _require_array(row["moods"]))],
+        title=_cast(str, row["title"]),
     )
 
 
@@ -55,4 +55,4 @@ async def list_specimens_by_moods(
     params: dict[str, object] = {
         "moods": None if moods is None else [None if x is None else x.pg_encode() for x in moods],
     }
-    return await fetch_many(conn, _SQL, params, decode_list_specimens_by_moods)
+    return await _fetch_many(conn, _SQL, params, _decode_row)
