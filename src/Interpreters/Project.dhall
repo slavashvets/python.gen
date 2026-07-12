@@ -154,24 +154,25 @@ let combineOutputs =
                 )
                 customTypes
 
-        let asyncFacade =
+        let surface = if config.sync then Surface.sync else Surface.async
+
+        let facade =
               { path = packagePrefix ++ "__init__.py"
               , content =
                   FacadeModule.run
-                    { generatedPrefix = "._generated"
-                    , statementsPath = "statements"
-                    , statements = facadeStatements
-                    , types = facadeTypes
-                    }
+                    { statements = facadeStatements, types = facadeTypes }
               }
 
         -- Surface-agnostic; performs no I/O, so exactly one copy is emitted
-        -- regardless of surface. Both _runtime.py modules re-export from it.
+        -- regardless of surface. Both runtime bodies re-export from it.
         let coreModule =
               { path = srcPrefix ++ "_core.py", content = CoreModule.run {=} }
 
         let runtimeModule =
-              { path = srcPrefix ++ "_runtime.py", content = RuntimeModule.run {=} }
+              { path = srcPrefix ++ "_runtime.py"
+              , content =
+                  if config.sync then RuntimeModule.runSync {=} else RuntimeModule.run {=}
+              }
 
         let statementsInit =
               { path = srcPrefix ++ "statements/__init__.py"
@@ -179,9 +180,8 @@ let combineOutputs =
                   InitModule.run { docstring = "Generated SQL statements." }
               }
 
-        -- The shared Row dataclasses + decode functions, imported by both the
-        -- async and sync statement modules so the two surfaces share one set of
-        -- types (cross-surface identity).
+        -- The shared Row dataclasses + decode functions, imported by the
+        -- statement modules of whichever surface was selected.
         let rowDefs =
               Prelude.List.concatMap
                 QueryGen.Output
@@ -209,13 +209,13 @@ let combineOutputs =
                       }
                     ]
 
-        let asyncStatementFiles =
+        let statementFiles =
               Prelude.List.map
                 QueryGen.Output
                 Lude.File.Type
                 ( \(query : QueryGen.Output) ->
-                    { path = srcPrefix ++ query.asyncModulePath
-                    , content = query.asyncContent
+                    { path = srcPrefix ++ query.modulePath
+                    , content = query.content
                     }
                 )
                 queries
@@ -262,87 +262,21 @@ let combineOutputs =
               if    hasCustomRegistration
               then  [ { path = srcPrefix ++ "_register.py"
                       , content =
-                          RegisterModule.run
-                            { compositeNames, enumNames, surface = Surface.async }
+                          RegisterModule.run { compositeNames, enumNames, surface }
                       }
                     ]
               else  [] : List Lude.File.Type
 
-        -- The sync surface mirrors the async one under `sync/`, gated on
-        -- config.sync. It reuses the shared `_rows.py` and `types/`, so only
-        -- the I/O wrappers (statements, runtime, register) and the sync facade
-        -- are sync-specific.
-        let syncStatementFiles =
-              Prelude.List.map
-                QueryGen.Output
-                Lude.File.Type
-                ( \(query : QueryGen.Output) ->
-                    { path = srcPrefix ++ query.syncModulePath
-                    , content = query.syncContent
-                    }
-                )
-                queries
-
-        let syncSubpackageInit =
-              { path = srcPrefix ++ "sync/__init__.py"
-              , content =
-                  InitModule.run { docstring = "Generated sync database client." }
-              }
-
-        let syncStatementsInit =
-              { path = srcPrefix ++ "sync/statements/__init__.py"
-              , content =
-                  InitModule.run { docstring = "Generated SQL statements (sync)." }
-              }
-
-        let syncRuntime =
-              { path = srcPrefix ++ "sync/_runtime.py"
-              , content = RuntimeModule.runSync {=}
-              }
-
-        let syncRegisterFiles =
-              if    hasCustomRegistration
-              then  [ { path = srcPrefix ++ "sync/_register.py"
-                      , content =
-                          RegisterModule.run
-                            { compositeNames, enumNames, surface = Surface.sync }
-                      }
-                    ]
-              else  [] : List Lude.File.Type
-
-        let syncFacade =
-              { path = packagePrefix ++ "sync/__init__.py"
-              , content =
-                  FacadeModule.run
-                    { generatedPrefix = ".._generated"
-                    , statementsPath = "sync.statements"
-                    , statements = facadeStatements
-                    , types = facadeTypes
-                    }
-              }
-
-        let syncFiles =
-              if    config.sync
-              then    [ syncSubpackageInit
-                      , syncRuntime
-                      , syncStatementsInit
-                      , syncFacade
-                      ]
-                    # syncRegisterFiles
-                    # syncStatementFiles
-              else  [] : List Lude.File.Type
-
-        let asyncStaticFiles =
-              [ asyncFacade, topInit, coreModule, runtimeModule, statementsInit ]
+        let staticFiles =
+              [ facade, topInit, coreModule, runtimeModule, statementsInit ]
 
         let allFiles =
-                asyncStaticFiles
+                staticFiles
               # registerFiles
               # rowsFiles
               # typesInitFiles
               # typeFiles
-              # asyncStatementFiles
-              # syncFiles
+              # statementFiles
 
         in  Prelude.List.map Lude.File.Type Lude.File.Type withHeader allFiles
           : Output

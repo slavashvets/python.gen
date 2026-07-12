@@ -35,19 +35,15 @@ let Model = ../Deps/Contract.dhall
 
 let Input = Model.Query
 
--- A query contributes a shared Row (assembled into `_rows.py` by Project) plus a
--- thin statement module per surface. asyncModule is always emitted; syncModule is
--- emitted only when config.sync. rowImports are the result-column imports,
--- folded into `_rows.py`.
+-- A query contributes a shared Row (assembled into `_rows.py` by Project) plus
+-- one thin statement module, rendered for whichever surface config.sync picked.
 let Output =
       { functionName : Text
       , rowClassName : Optional Text
       , rowDef : Optional RowsModule.RowDef
       , rowImports : ImportSet.Type
-      , asyncModulePath : Text
-      , asyncContent : Text
-      , syncModulePath : Text
-      , syncContent : Text
+      , modulePath : Text
+      , content : Text
       }
 
 let render =
@@ -109,30 +105,29 @@ let render =
                 )
                 result.rowClass
 
-        let mkModule =
-              \(surface : Surface.Type) ->
-                StatementModule.run
-                  { functionName
-                  , returnType = result.returnType
-                  , helperName = result.helperName
-                  , callsDecode = result.callsDecode
-                  , sqlLiteral = fragments.sqlLiteral
-                  , rowClassName
-                  , decodeName
-                  , paramSigLines
-                  , paramDictEntries
-                  , imports = paramImports
-                  , surface
-                  }
+        let surface = if config.sync then Surface.sync else Surface.async
+
+        let content =
+              StatementModule.run
+                { functionName
+                , returnType = result.returnType
+                , helperName = result.helperName
+                , callsDecode = result.callsDecode
+                , sqlLiteral = fragments.sqlLiteral
+                , rowClassName
+                , decodeName
+                , paramSigLines
+                , paramDictEntries
+                , imports = paramImports
+                , surface
+                }
 
         in  { functionName
             , rowClassName
             , rowDef
             , rowImports = result.imports
-            , asyncModulePath = "statements/${functionName}.py"
-            , asyncContent = mkModule Surface.async
-            , syncModulePath = "sync/statements/${functionName}.py"
-            , syncContent = mkModule Surface.sync
+            , modulePath = "statements/${functionName}.py"
+            , content
             }
 
 let run =

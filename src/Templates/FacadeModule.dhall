@@ -10,16 +10,15 @@ let StatementExport =
 -- A custom type re-exported from types/: the leaf module name plus the class.
 let TypeExport = { moduleName : Text, className : Text }
 
--- generatedPrefix and statementsPath select the surface: the async facade lives
--- at the package root (prefix `._generated`, statements under `statements`); the
--- sync facade lives one level down at `sync/__init__.py` (prefix `.._generated`,
--- statements under `sync.statements`). Both re-export the SAME Row dataclasses
--- from `_rows` and the SAME enums/composites from `types`, so the two surfaces
--- share one set of types.
+-- The facade always lives at the package root, importing from `_generated`
+-- (prefix `._generated`) and `_generated/statements` (statementsPath
+-- `statements`) — both constant now that exactly one surface is emitted per
+-- generate (Interpreters/Project.dhall picks it via config.sync).
+let generatedPrefix = "._generated"
+let statementsPath = "statements"
+
 let Params =
-      { generatedPrefix : Text
-      , statementsPath : Text
-      , statements : List StatementExport
+      { statements : List StatementExport
       , types : List TypeExport
       }
 
@@ -48,7 +47,7 @@ let runtimeNames = [ "JsonValue", "NoRowError" ]
 let run =
       \(params : Params) ->
         let runtimeBlock =
-              "from ${params.generatedPrefix}._core import "
+              "from ${generatedPrefix}._core import "
               ++  Prelude.Text.concatMapSep
                     ", "
                     Text
@@ -60,14 +59,14 @@ let run =
                 "\n"
                 TypeExport
                 ( \(t : TypeExport) ->
-                    "from ${params.generatedPrefix}.types.${t.moduleName} import ${alias t.className}"
+                    "from ${generatedPrefix}.types.${t.moduleName} import ${alias t.className}"
                 )
                 params.types
 
         let rows = rowNames params.statements
 
         let rowBlock =
-                  "from ${params.generatedPrefix}._rows import (\n"
+                  "from ${generatedPrefix}._rows import (\n"
               ++  Prelude.Text.concatMap
                     Text
                     (\(name : Text) -> "    ${alias name},\n")
@@ -79,7 +78,7 @@ let run =
                 "\n"
                 StatementExport
                 ( \(s : StatementExport) ->
-                    "from ${params.generatedPrefix}.${params.statementsPath}.${s.functionName} import ${alias s.functionName}"
+                    "from ${generatedPrefix}.${statementsPath}.${s.functionName} import ${alias s.functionName}"
                 )
                 params.statements
 

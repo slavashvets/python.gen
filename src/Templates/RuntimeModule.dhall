@@ -81,10 +81,11 @@ let content =
               _ = await cur.execute(sql, params)
       ''
 
--- The sync mirror, emitted at _generated/sync/_runtime.py when config.sync is True. The
--- five helpers are the same shape with `def`/`Connection`/`with`/no-`await`.
--- JsonValue/NoRowError/require_array are re-exported from _core (two levels up)
--- so both surfaces share one canonical identity rather than two equal-but-
+-- The sync surface's body, selected in place of `content` at the same
+-- `_runtime.py` path when config.sync is True (Interpreters/Project.dhall).
+-- The five helpers are the same shape with `def`/`Connection`/`with`/no-
+-- `await`. JsonValue/NoRowError/require_array are re-exported from _core so
+-- both surfaces share one canonical identity rather than two equal-but-
 -- distinct definitions.
 let syncContent =
       ''
@@ -96,7 +97,7 @@ let syncContent =
       from psycopg import Connection
       from psycopg.rows import dict_row
 
-      from .._core import JsonValue as JsonValue, NoRowError as NoRowError, require_array as require_array
+      from ._core import JsonValue as JsonValue, NoRowError as NoRowError, require_array as require_array
 
       _T = TypeVar("_T")
       _Row = Mapping[str, object]
