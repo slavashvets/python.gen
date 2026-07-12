@@ -8,8 +8,6 @@ let Sdk = ../Deps/Sdk.dhall
 
 let ImportSet = ../Structures/ImportSet.dhall
 
-let CustomKind = ../Structures/CustomKind.dhall
-
 let OnUnsupported = ../Structures/OnUnsupported.dhall
 
 let MemberGen = ./Member.dhall
@@ -43,14 +41,6 @@ let Output =
       , pgName : Text
       , kind : TypeKind
       }
-
--- Composite fields could in principle reference other custom types, but pgn never
--- nests customs in our corpus and CustomType.run does not receive the project
--- lookup (Project.run threads it only to queries). Resolving any nested custom to
--- Absent makes Member.run fail loudly instead of guessing a type.
-let nestedLookup
-    : CustomKind.Lookup
-    = \(_ : Model.Name) -> CustomKind.TypeKind.Absent
 
 -- Render the stdlib/runtime imports a composite field type needs, in a fixed
 -- order so output stays byte-stable. Reads only the standard flags; nested custom
@@ -123,9 +113,7 @@ let run =
                         = Lude.Compiled.traverseList
                             Model.Member
                             MemberGen.Output
-                            ( \(m : Model.Member) ->
-                                MemberGen.run config nestedLookup m
-                            )
+                            ( \(m : Model.Member) -> MemberGen.run config m )
                             members
 
                     let assemble =

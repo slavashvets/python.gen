@@ -35,12 +35,23 @@ let run =
                 )
                 params.variants
 
+        let codecMethods =
+                "\n"
+              ++ "    @staticmethod\n"
+              ++ "    def _decode(src: object) -> \"${params.typeName}\":\n"
+              ++ "        return ${params.typeName}(cast(str, src))\n"
+              ++ "\n"
+              ++ "    def _encode(self) -> \"${params.typeName}\":\n"
+              ++ "        return self"
+
         in  ''
             from enum import StrEnum
+            from typing import cast
 
 
             class ${params.typeName}(StrEnum):
             ${memberLines}
+            ${codecMethods}
             ''
 
 in  Sdk.Sigs.template Params run /\ { Variant }

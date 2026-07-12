@@ -1,5 +1,45 @@
 # Upcoming
 
+- `buildLookup` (`Interpreters/Project.dhall`) and, with it, this generator's
+  last dependency on pgn's fork-only `Text/equal` builtin are removed from
+  `src/`: custom-type decode/encode now dispatches through named
+  `_decode`/`_encode` methods generated onto each custom type's own Python
+  class (`CompositeModule.dhall`/`EnumModule.dhall`), called by name from
+  every reference site, instead of resolving classification and fields via a
+  project-wide structural search (`grep -rn "Text/equal" src` now returns
+  only two explanatory comments, zero invocations). Array (dims > 0)
+  decode/encode is built at the call site (`Member.dhall`/
+  `ParamsMember.dhall`) instead of a third per-type method, delegating only
+  the per-element transform to `_decode`/`_encode`: an earlier draft this
+  session added a per-type `_decode_array` to `EnumModule.dhall`, but it
+  could not express `elementIsNullable` (a per-column fact, not a per-type
+  one) and silently broke nullable-element enum-array decode and
+  enum-array param encode — both working, corpus-exercised paths — caught
+  by the final whole-branch review and fixed before merge. Behavior change:
+  because the call site is now kind-uniform, a 1-D composite-array column
+  or param is no longer rejected at Dhall-generation time the way it used
+  to be, and — unlike the `_decode_array` design it replaces — no longer
+  depends on `basedpyright strict` catching a missing method either, since
+  `_decode`/`_encode` genuinely exist on a composite class too. **This path
+  has not been exercised against real Postgres, and `tests/golden/` has NOT
+  been regenerated for this change this session** — the composite-array
+  fixture addition, its golden regeneration, and confirming actual Postgres
+  round-trip behavior are a known, deliberate gap in this commit, deferred
+  to a follow-up pass on a properly provisioned machine (see
+  `docs/plans/2026-07-11-reusable-custom-type-codecs.md`).
+  Separately, a composite field nesting another custom type is *also* no
+  longer rejected at generation time: the `nestedLookup = Absent` stub that
+  used to force it down the same loud-fail path is gone (it only existed
+  to satisfy `Member.run`'s old signature). This is not the same kind of
+  change as the composite-array case above, though — `CompositeModule.dhall`'s
+  `_decode`/`_encode` still do a blind flat `cast(tuple[...], src)`/splat,
+  unchanged by this refactor, and never recurse into the nested type's own
+  codec, so the field silently decodes/encodes wrong rather than being
+  caught by a type checker. Because the failure mode is `cast()`, which
+  suppresses type-checking on its argument by design, this is **not**
+  expected to be caught by `basedpyright strict`. It is a real, silent
+  architecture gap, flagged here as an open follow-up design question, not
+  a shipped or backstopped behavior change.
 - Migrated the generator's internal dependencies to `gen-contract` v4.0.1
   and `gen-sdk` v2.0.0, adopting `Sdk.Sigs` in place of the local
   `Algebras/` module, and restructured the repository layout to match the

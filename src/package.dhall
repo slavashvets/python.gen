@@ -2,7 +2,22 @@ let Sdk = ./Deps/Sdk.dhall
 
 let OnUnsupported = ./Structures/OnUnsupported.dhall
 
-let Config = ./Config.dhall
+let ProjectInterpreter = ./Interpreters/Project.dhall
+
+-- User-facing config for this generator. `emitSync` adds a parallel sync
+-- surface (psycopg.Connection) alongside the default async one, so one
+-- project can serve both an async backend and a sync (Dagster) consumer from
+-- shared Row types. `onUnsupported` picks Fail (default, abort loudly) or
+-- Skip (drop the unsupported statement/type and its dependents, with a
+-- warning) when a query or custom type hits a PG shape the generator cannot
+-- render; see Structures/OnUnsupported.dhall. All fields are Optional so a
+-- project may omit the whole config block or any subset of its keys;
+-- Interpreters/Project.dhall's `run` supplies the defaults.
+let Config =
+      { packageName : Optional Text
+      , emitSync : Optional Bool
+      , onUnsupported : Optional OnUnsupported.Mode
+      } : Type
 
 let Config/default
     : Config
@@ -11,6 +26,4 @@ let Config/default
       , onUnsupported = None OnUnsupported.Mode
       }
 
-let interpret = ./Interpret.dhall
-
-in  Sdk.Sigs.generator Config Config/default interpret
+in  Sdk.Sigs.generator Config Config/default ProjectInterpreter.run

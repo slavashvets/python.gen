@@ -125,18 +125,28 @@ those the decode is a `cast(<pyType>, row["<pgName>"])` to satisfy strict
 
 - enum column: `Mood(cast(str, row["feeling"]))`; nullable guards `None`.
 - enum array column: element-wise rebuild,
-  `[Mood(v) for v in cast(list[str], row["..."])]`, with per-element and
-  outer `None` guards driven by `elementIsNullable` / column nullability.
-  Requires the enum's TypeInfo registered (section 6).
+  `[Mood._decode(v) for v in cast(list[str], row["..."])]`, with per-element
+  and outer `None` guards driven by `elementIsNullable` / column nullability,
+  built at the reference site in `Member.dhall` rather than a per-type array
+  method (see below). Requires the enum's TypeInfo registered (section 6).
 - composite column: psycopg returns a namedtuple once the composite is
   registered; decode is `TypeName(*cast(tuple[...], row["..."]))` with the
   exact field types.
 
 `Member.run` (`Interpreters/Member.dhall`) builds `decodeExpr` as a
 `Text -> Text` function next to the type info, so `_rows.py` and `types/`
-compose the same logic. A composite array, or an enum array with
-`dims > 1`, is unimplemented and fails loudly (`Compiled.report`) rather
-than emitting wrong Python.
+compose the same logic. Any custom-type array with `dims > 1` is
+unimplemented and fails loudly (`Compiled.report`), regardless of kind. For
+`dims == 1`, `Member.dhall` builds the list comprehension itself
+(`[${typeName}._decode(v) for v in cast(...)]`, with per-element/outer
+`None` guards driven by `value.elementIsNullable`/`isNullable`) instead of
+calling a per-type array method: a per-type, zero-argument method has no way
+to see `elementIsNullable`, a per-*column* fact, so it cannot express it.
+This makes the branch kind-uniform: a 1-D composite-array column now
+type-checks and attempts a real decode the same way an enum-array column
+does, instead of being rejected at Dhall-generation time the way it used
+to be. See section 12 for why that changed and for the currently-unverified
+state of that path.
 
 ---
 
@@ -226,10 +236,15 @@ no partial output for the affected query under `Fail`. Add a mapping to
 
 The param side (`Interpreters/ParamsMember.dhall`) carries the same
 loud-fail contract for bind shapes psycopg cannot adapt faithfully. It
-rejects, rather than silently mis-binds:
-
-- a `json`/`jsonb` ARRAY param (`Jsonb` wraps a scalar, not element-wise).
-- a composite ARRAY param (psycopg cannot adapt the dataclass array).
+still rejects a `json`/`jsonb` ARRAY param (`Jsonb` wraps a scalar, not
+element-wise). A composite ARRAY param is no longer rejected here the way
+it used to be (see section 12): encode branches on `Natural/isZero
+value.dims`, calling `<field>._encode()` for a scalar custom-type param and
+building `[x._encode() for x in <field>]` (with the same
+`elementIsNullable`/outer-nullable guards as decode) for an array one, so a
+composite-array param now type-checks and attempts a genuine per-element
+encode rather than depending on `basedpyright strict` to catch a missing
+method.
 
 ### Arrays and nullability
 
@@ -276,12 +291,34 @@ composite (a single `value: str | None` field) exists specifically to cover
 this, exercised as both a param and a `RETURNING` result column in the same
 statement, with a round-trip test.
 
-Composite fields cannot themselves reference another custom type.
-`CustomType.dhall` hardcodes the nested-member lookup to `Absent`
-(`nestedLookup`), so a composite nesting a composite (or an enum) fails the
-same loud-fail path as any other unresolvable reference rather than
-guessing a decode. Widening this is possible but has not been needed by any
-project this generator has shipped against yet.
+Composite fields nesting another custom type used to be explicitly
+rejected: `CustomType.dhall` called `Member.run` with a `nestedLookup` stub
+hardcoded to `Absent`, forcing the same loud-fail path as any other
+unresolvable reference rather than guessing a decode. That stub is gone —
+it existed only to satisfy `Member.run`'s old signature, and was deleted
+along with `buildLookup` (section 12) — but its removal does not make this
+case work; it only removed the one thing that used to reject it at
+generation time. `Member.run` does compute a named-codec `decodeExpr`
+(`${typeName}._decode(...)`) for a `Custom`-typed field, but
+`CustomType.dhall`'s Composite branch never threads it anywhere: it maps
+each member down to a flat `{fieldName, fieldType}` pair (the `Field` shape
+`Templates/CompositeModule.dhall` takes) and discards `decodeExpr`
+entirely. `CompositeModule.dhall`'s `_decode`/`_encode` — unchanged by this
+refactor — render a single blind `${typeName}(*cast(tuple[...], src))`
+splat and a flat `(self.field1, ...)` tuple; neither ever calls a nested
+field's own `_decode`/`_encode`. So a composite field whose own type is
+another custom type still does not decode/encode correctly at
+runtime — it is just no longer *rejected* at generation time the way it
+used to be. Unlike the composite-array case (section 12), this is **not**
+expected to be caught by `basedpyright strict`: `cast()` exists
+specifically to suppress type-checking on its argument, so the checker
+sees exactly the annotated field type and raises nothing. This is a real,
+silent architecture gap introduced by this refactor — flagged here as an
+open follow-up design question (should `CustomType.dhall` thread a
+member's own `decodeExpr` through to `CompositeModule.dhall`, or does
+`_decode` need to become field-aware instead of a blind tuple cast?), not
+something fixed in this commit and not on the same footing as the
+composite-array case's deferred-but-backstopped behavior change.
 
 ---
 
@@ -383,20 +420,27 @@ overwritten on every run. Do not hand-edit it.
 ```dhall
 let Sdk = ./Deps/Sdk.dhall
 
-let Config = ./Config.dhall
+let OnUnsupported = ./Structures/OnUnsupported.dhall
 
-let interpret = ./Interpret.dhall
+let ProjectInterpreter = ./Interpreters/Project.dhall
 
-in  Sdk.Sigs.generator Config Config/default interpret
+let Config = { packageName : Optional Text, emitSync : Optional Bool, onUnsupported : Optional OnUnsupported.Mode }
+
+let Config/default = { packageName = None Text, emitSync = None Bool, onUnsupported = None OnUnsupported.Mode }
+
+in  Sdk.Sigs.generator Config Config/default ProjectInterpreter.run
 ```
 
 `Sdk.Sigs.generator` has signature `\(Config : Type) -> \(defaultConfig : Config) ->
 \(interpret : Config -> Contract.Project -> Contract.Output) -> ...`; it curries
 `interpret` against `defaultConfig` whenever the user config is absent and hands
-the result to gen-contract's `Contract.module`. `Interpret.dhall` folds the
-optional user config into the internal interpreter config and calls
-`Interpreters/Project.dhall`, which traverses queries and custom types and
-assembles the file list (`Contract.Output`).
+the result to gen-contract's `Contract.module`. `Config` is passed straight
+through to `Interpreters/Project.dhall` as that interpreter's own `Config` --
+there is no separate config type or resolve step in between, matching every
+other gen (java.gen, rust.gen, haskell.gen). `Project.run` folds the optional
+user config into the fully-resolved internal config itself (see "Config flow"
+below), traverses queries and custom types, and assembles the file list
+(`Contract.Output`).
 
 `src/` mirrors a typical pgn gen-sdk generator, Python-flavored: `Interpreters/`
 assembles data, `Templates/` renders it to Python text. The interpreter/template
@@ -405,13 +449,10 @@ algebra signatures themselves live in gen-sdk's `Sdk.Sigs` (`interpreter.dhall`/
 
 ```text
 src/
-  package.dhall              # Sdk.Sigs.generator Config Config/default interpret  (entry handed to gen-sdk)
-  Config.dhall               # user config TYPE: { packageName, emitSync, onUnsupported }
-  Interpret.dhall            # derive interpreter Config from user Config, call Project.run
+  package.dhall              # Config, Config/default, Sdk.Sigs.generator Config Config/default ProjectInterpreter.run
   Deps/                      # pinned remote imports: gen-sdk, gen-contract, lude, dhall Prelude
   Structures/
     Surface.dhall            # async/sync token table (section 4)
-    CustomKind.dhall         # Lookup : Name -> < Enum | Composite | Absent > + composite fields
     ImportSet.dhall          # per-module import flags + combine
     PyIdent.dhall            # sanitize names that become Python identifiers (keyword -> name_)
     OnUnsupported.dhall      # < Fail | Skip > (section 11)
@@ -438,29 +479,39 @@ src/
     EnumModule.dhall / CompositeModule.dhall / TypesInit.dhall / InitModule.dhall
 ```
 
-The cross-cutting dependency is the custom-type lookup: `Scalar`/`Value`/
-`Primitive` stop at "Custom + Name"; `Project.run` builds a
-`CustomKind.Lookup : Name -> < Enum | Composite | Absent >` from the
-(post-Skip-filter) custom types and threads it to `Query.run` ->
-`Result`/`ResultColumns`/`ParamsMember`/`Member`. The lookup compares by
-`name.inSnakeCase` (the column carries a distinct `Name` occurrence, so
-record identity cannot be relied on) and carries the type's alphabetical
-index so per-module custom-type import blocks stay sorted. Section 12
-covers why this one comparison still needs a Dhall fork builtin.
+The cross-cutting dependency used to be a project-wide custom-type lookup:
+`Project.run` built a `CustomKind.Lookup : Name -> < Enum | Composite |
+Absent >` from the (post-Skip-filter) custom types and threaded it to
+`Query.run` -> `Result`/`ResultColumns`/`ParamsMember`/`Member`. That
+lookup, and `Structures/CustomKind.dhall` itself, are deleted. `Scalar`/
+`Value`/`Primitive` still stop at "Custom + Name", but `Member.dhall`/
+`ParamsMember.dhall` now resolve a `Custom` reference by calling the
+generated class's `_decode`/`_encode` method directly, keyed off
+`name.inPascalCase` — no project-wide search, no classification step
+threaded through the query pipeline. Array (dims > 0) decode/encode stays
+local to the call site rather than becoming a third per-type method,
+because `elementIsNullable` is a per-column fact a per-type method cannot
+see. Section 12 covers the removal and the behavior change it introduced.
+The old lookup's alphabetical index, used to keep per-module custom-type
+import blocks sorted and deduped, is also gone: `ImportSet.dhall` now
+renders custom-type imports in encounter order, unsorted and undeduped
+(see the comment at its top).
 
 ### Config flow
 
-`Config.dhall` is the user-facing type `{ packageName : Optional Text,
-emitSync : Optional Bool, onUnsupported : Optional OnUnsupported.Mode }`.
-`compile.dhall` folds the optional user config, and each of its optional
-fields, into the internal interpreter Config `{ packageName, importName,
-emitAsync = True, emitSync, onUnsupported }`, with `packageName` falling
-back to the project name in kebab case, `emitSync` to `False`, and
-`onUnsupported` to `Fail`. `importName` = `packageName` with `-` -> `_`.
-`emitAsync` is always `True`. A project's artifact config can therefore omit
-`config:` entirely, supply `config: {}`, or set any subset of the three
-keys; see the README's Config reference for the decode semantics pgn itself
-applies before this fold ever runs.
+`package.dhall`'s `Config` is the user-facing type `{ packageName : Optional
+Text, emitSync : Optional Bool, onUnsupported : Optional OnUnsupported.Mode
+}`, passed straight through to `Interpreters/Project.dhall` as its own
+`Config` -- there is no separate config type or resolve step in between.
+`Project.run` folds the optional config, and each of its optional fields,
+into the fully-resolved `ResolvedConfig` it passes to every interpreter
+below it: `{ packageName, importName, emitSync, onUnsupported }`, with
+`packageName` falling back to the project name in kebab case, `emitSync` to
+`False`, and `onUnsupported` to `Fail`. `importName` = `packageName` with
+`-` -> `_`. A project's artifact config can therefore omit `config:`
+entirely, supply `config: {}`, or set any subset of the three keys; see the
+README's Config reference for the decode semantics pgn itself applies
+before `Project.run` ever sees the value.
 
 ---
 
@@ -474,13 +525,18 @@ aborts the whole `Project.run` non-zero via `Lude.Compiled.report`.
 drop the smallest self-consistent unit and keep the rest of the project
 generating. `Project.dhall`'s `run` computes, once, whether each custom type
 and each query would have compiled cleanly (`typeSucceeds` / the `keep`
-field of a per-query `QueryCheck`), filters the failing ones out before
-building the custom-type lookup and the final query list, and separately
-collects a `Report` per dropped unit into `combined.warnings`. A query that
-references a skipped custom type resolves that reference to `Absent`
-through the (already-filtered) lookup and fails its own compile the same
-way any other unsupported shape would, which is what makes the drop cascade
-without any special-cased "type X depends on type Y" bookkeeping.
+field of a per-query `QueryCheck`), filters the failing ones out to produce
+the final surviving custom-type and query lists, and separately collects a
+`Report` per dropped unit into `combined.warnings`.
+
+Whether a query referencing a *specific* skipped custom type still cascades
+into its own compile failure is worth re-checking rather than assumed: the
+project-wide custom-type lookup this cascade used to route through is gone
+(section 12), and neither `Member.dhall` nor `ParamsMember.dhall` currently
+take the surviving custom-type list as an input to cross-check a
+`customRef` name against. This is unrelated to the `Text/equal` removal and
+out of scope for this pass; flagged here only so the Skip-mode cascade
+isn't assumed unchanged without someone verifying it.
 
 The precedent for this shape is java.gen, an earlier gen-sdk generator for a
 different target language: it skips unconditionally and silently (an
@@ -496,34 +552,108 @@ generator is already ready for that; it isn't waiting on it.
 
 ---
 
-## 12. Forked-Dhall (`Text/equal`) dependency risk
+## 12. Forked-Dhall (`Text/equal`) dependency: removed from this generator
 
-ACCEPTED RISK, recorded so nobody is surprised. pgn is a prebuilt binary
-that embeds a FORKED Dhall providing a `Text/equal` builtin, which is not
-part of the upstream Dhall standard Prelude. This generator uses it in
-exactly one place left: `Interpreters/Project.dhall`'s `buildLookup`, to
-match a custom type by its snake-case name while building the
-`CustomKind.Lookup`. Everywhere else that used to need name equality
-(keyword sanitizing in `PyIdent.dhall`) has since been rewritten against a
-`Text/replace`-based trick that needs no fork builtin at all; section 13
-covers how.
+RESOLVED, not an accepted risk anymore. `Interpreters/Project.dhall`'s
+`buildLookup` was this generator's last consumer of pgn's FORKED-Dhall-only
+`Text/equal` builtin (not part of the upstream Dhall standard Prelude): it
+matched a custom type by its snake-case name while building a
+`CustomKind.Lookup : Name -> < Enum | Composite | Absent >`, threaded
+through `Query.run` so `Result`/`ResultColumns`/`ParamsMember`/`Member`
+could classify a `Custom` reference and pull its fields. `buildLookup` and
+`CustomKind.Lookup` usage are removed in commit `ffdd9bd`; the now-empty
+`Structures/CustomKind.dhall` file itself is deleted separately in commit
+`ab8f4df`.
 
-`buildLookup`'s use is harder to remove the same way: it returns a
-structural `TypeKind` value, not `Text`, so the replace-based marker trick
-(built for sanitizing a `Text -> Text` name) doesn't carry over as-is.
-gen-sdk's own `Fixtures` module relies on the same builtin, so a Dhall
-evaluator without it can't even typecheck gen-sdk's full package entry
-point, only the narrower `module.dhall`/`Project.dhall` imports this
-generator pins directly. The clean fix is upstream: a `kind` tag or a
-`Natural` index carried directly on `Scalar.Custom`, so the lookup becomes
-an equality-free structural match. That is a planned ask against gen-sdk,
-not something this generator can do unilaterally.
+In their place, `CompositeModule.dhall`/`EnumModule.dhall` now emit a
+`_decode`/`_encode` method directly onto each generated custom type's
+Python class, covering the scalar (`dims == 0`) case. `Member.dhall` and
+`ParamsMember.dhall` call it by name off `name.inPascalCase` at the
+reference site (e.g. `${typeName}._decode(src)`) instead of resolving
+classification/fields via a project-wide name search. No name-equality
+comparison is needed at all anymore, so there's nothing left for
+`Text/equal` to do here. `grep -rn "Text/equal" src` confirms this: it
+returns exactly two hits, both explanatory comments about why a mechanism
+does *not* use the builtin (`Structures/ImportSet.dhall:7`,
+`Structures/PyIdent.dhall:48`), zero actual invocations anywhere in `src/`.
 
-Consequence: end-to-end regeneration requires the pgn binary (for its
-embedded fork Dhall), a live Postgres, and currently-live remote Dhall
-imports (`Deps/*` resolve gen-sdk, lude, and the Prelude over the network,
-pinned by sha256). There is no pure-upstream-dhall path to reproduce the
-output today.
+Array (dims > 0) decode/encode is deliberately NOT a third per-type method.
+An earlier draft this session gave `EnumModule.dhall` a `_decode_array`
+staticmethod, but the final whole-branch review caught that a per-type,
+zero-argument array codec cannot express `elementIsNullable` — an
+`Optional`-array-settings field that varies per *column*, not per type (a
+`moods: list[Mood | None] | None` column needs a different per-element guard
+than a `list[Mood]` column of the same enum). That method hardcoded the
+non-nullable-element shape unconditionally, silently breaking
+nullable-element enum-array decode (a runtime crash on any `NULL` array
+element) and, symmetrically, `ParamsMember.dhall`'s unconditional
+`${field}._encode()` broke enum-array param encode (calling `._encode()` on
+a `list`). Both were working, corpus-exercised paths before this refactor.
+The fix moves array handling back to the call site, exactly where it lived
+before this refactor: `Member.dhall`'s dims==1 branch and
+`ParamsMember.dhall`'s `Natural/isZero value.dims` branch build the list
+comprehension locally, reading `value.elementIsNullable`/`value.dims` off
+the column- or param-local `Value.Output`, and delegate only the
+per-element transform to `${typeName}._decode(v)` / `x._encode()`. This
+restores exact parity with the pre-refactor `enumArrayDecode`/array-param
+behavior for enums (verified against
+`tests/golden/src/specimen_client/_generated/_rows.py`'s `moods` column and
+`statements/insert_specimen.py`'s `moods` param — same shape, just calling
+`._decode`/`._encode` per element instead of the enum constructor/bare
+pass-through).
+
+A behavior change worth flagging, now unavoidable rather than accidental:
+because the call site's array branch is kind-uniform (the same
+`${typeName}._decode(v)`/`x._encode()` call per element regardless of
+whether `typeName` is an enum or a composite), a 1-D composite-array column
+or param is no longer rejected at Dhall-generation time the way it used to
+be (the old "Array of a composite type is not supported" reports are
+gone), and — unlike the `_decode_array` design it replaces — no longer
+depends on `basedpyright strict` catching a missing method either, since
+`CompositeModule.dhall`'s `_decode`/`_encode` genuinely exist. A
+composite-array column/param now type-checks and attempts a real
+per-element decode/encode. **This path remains unverified against real
+Postgres either way** — composite arrays were never tested before this
+refactor (they were rejected outright at generation time) and aren't
+tested now (same deferred gap, just no longer expected to fail statically).
+Adding that fixture, regenerating golden, and confirming actual Postgres
+round-trip behavior for a composite-array column/param are deferred to a
+follow-up pass on a properly provisioned machine; see
+`docs/plans/2026-07-11-reusable-custom-type-codecs.md` for the original
+design decision (Option A, chosen deliberately) and the deferred task list.
+
+A second, related change here: `CustomType.dhall`'s Composite branch used
+to call `Member.run` with a `nestedLookup` stub hardcoded to `Absent`,
+which forced a composite field nesting another custom type down the same
+loud-fail path as any unresolvable reference (see section 5). That stub is
+gone — it existed only to satisfy `Member.run`'s old signature, and was
+deleted along with `buildLookup` — but, unlike the composite-array case
+just above, this is not "the same behavior change, just unexercised."
+`CompositeModule.dhall`'s `_decode`/`_encode` do a blind flat
+`cast(tuple[...], src)`/splat and never recurse into a nested field's own
+codec, unchanged by this refactor; removing the stub only removed the
+thing that used to reject a nested custom-type composite field at
+generation time, it did not make that field decode/encode correctly. And
+because the failure mode runs through `cast()` — which suppresses
+type-checking on its argument by design — this is **not** expected to be
+caught by `basedpyright strict` the way the composite-array case is. This
+is a real, silent architecture gap, not a deferred-but-backstopped
+behavior change; see section 5 for detail, and treat it as an open
+follow-up design question rather than something covered by the
+composite-array follow-up plan.
+
+This removal is scoped to this generator's own Dhall source. It does not
+unblock end-to-end regeneration: `demos/Exhaustive.dhall`/`mise run golden`
+still needs the pinned pgn binary (for its embedded fork Dhall) regardless,
+because gen-sdk's own `Fixtures` module independently relies on the same
+`Text/equal` builtin, and this change doesn't touch gen-sdk. A live
+Postgres and currently-live remote Dhall imports (`Deps/*` resolve gen-sdk,
+lude, and the Prelude over the network, pinned by sha256) are also still
+required for that path.
+
+Section 13 covers a different, still-in-place mechanism (`PyIdent.dhall`'s
+keyword sanitizing), which never depended on `buildLookup` and was already
+rewritten off `Text/equal` before this change; it is unaffected either way.
 
 ---
 

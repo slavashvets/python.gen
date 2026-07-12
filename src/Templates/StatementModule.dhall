@@ -79,7 +79,7 @@ let customImportLines
           ( \(c : ImportSet.CustomImport) ->
               "from ${typesPrefix}.${c.moduleName} import ${c.className}"
           )
-          (ImportSet.sortedCustoms imports)
+          imports.customTypes
 
 let rowsImportLine
     : Params -> List Text

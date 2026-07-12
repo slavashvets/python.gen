@@ -4,9 +4,9 @@ let Prelude = ../Deps/Prelude.dhall
 
 let Model = ../Deps/Contract.dhall
 
-let ImportSet = ../Structures/ImportSet.dhall
+let Sdk = ../Deps/Sdk.dhall
 
-let CustomKind = ../Structures/CustomKind.dhall
+let ImportSet = ../Structures/ImportSet.dhall
 
 let PyIdent = ../Structures/PyIdent.dhall
 
@@ -37,7 +37,6 @@ let Output =
 
 let run =
       \(config : Config) ->
-      \(lookup : CustomKind.Lookup) ->
       \(input : Input) ->
         -- Result-column / composite-field name becomes a dataclass field and decode
         -- kwarg, so a keyword-named column must be sanitized; row["..."] keeps the
@@ -57,63 +56,6 @@ let run =
 
                 let passthroughDecode =
                       \(src : Text) -> "cast(${castTarget}, ${src})"
-
-                let enumDecode =
-                      \(enumName : Text) ->
-                      \(src : Text) ->
-                        let call = "${enumName}(cast(str, ${src}))"
-
-                        in  if    input.isNullable
-                            then  "None if ${src} is None else ${call}"
-                            else  call
-
-                -- psycopg returns an enum array as a list of text, so each element
-                -- is rebuilt into the StrEnum. The cast pins the iterable's element
-                -- type; the per-element None guard mirrors elementIsNullable and the
-                -- outer None guard mirrors a nullable column.
-                let enumArrayDecode =
-                      \(enumName : Text) ->
-                      \(src : Text) ->
-                        let elemCast =
-                              if    value.elementIsNullable
-                              then  "list[str | None]"
-                              else  "list[str]"
-
-                        let elemDecode =
-                              if    value.elementIsNullable
-                              then  "None if v is None else ${enumName}(v)"
-                              else  "${enumName}(v)"
-
-                        -- require_array fails loudly if the array came back as
-                        -- text (the connection did not register the enum type)
-                        -- instead of iterating a string into bogus members.
-                        let elements =
-                              "[${elemDecode} for v in cast(${elemCast}, require_array(${src}))]"
-
-                        in  if    input.isNullable
-                            then  "None if ${src} is None else ${elements}"
-                            else  elements
-
-                -- Composites are registered per connection (see register_types),
-                -- so psycopg returns a namedtuple. The fixed-length tuple cast
-                -- with each field's exact pyType lets the splat satisfy strict.
-                let compositeDecode =
-                      \(typeName : Text) ->
-                      \(fields : List CustomKind.CompositeField) ->
-                      \(src : Text) ->
-                        let fieldTypes =
-                              Prelude.Text.concatMapSep
-                                ", "
-                                CustomKind.CompositeField
-                                (\(f : CustomKind.CompositeField) -> f.pyType)
-                                fields
-
-                        let call =
-                              "${typeName}(*cast(tuple[${fieldTypes}], ${src}))"
-
-                        in  if    input.isNullable
-                            then  "None if ${src} is None else ${call}"
-                            else  call
 
                 in  merge
                       { Passthrough =
@@ -135,11 +77,7 @@ let run =
                                 let typeName = name.inPascalCase
 
                                 let customImport =
-                                      \(order : Natural) ->
-                                        { className = typeName
-                                        , moduleName = name.inSnakeCase
-                                        , order
-                                        }
+                                      { className = typeName, moduleName = name.inSnakeCase }
 
                                 let mkOutput =
                                       \(customImports : ImportSet.Type) ->
@@ -149,81 +87,57 @@ let run =
                                         , pyType
                                         , isNullable = input.isNullable
                                         , imports =
-                                            ImportSet.combine
-                                              baseImports
-                                              customImports
+                                            ImportSet.combine baseImports customImports
                                         , decodeExpr
                                         }
 
-                                -- A 1-D enum array decodes element-wise; a scalar
-                                -- custom (dims == 0) keeps the single-value decode.
-                                -- Composite arrays and dims > 1 are unimplemented,
-                                -- so fail loudly rather than emit wrong Python.
+                                let wrapNullable =
+                                      \(call : Text -> Text) ->
+                                      \(src : Text) ->
+                                        if    input.isNullable
+                                        then  "None if ${src} is None else ${call src}"
+                                        else  call src
+
                                 let dimsIsOne =
                                       Natural/isZero (Natural/subtract 1 value.dims)
 
-                                in  merge
-                                      { Enum =
-                                          \(order : Natural) ->
-                                            let enumImport =
-                                                  ImportSet.customEnum
-                                                    (customImport order)
+                                in  if    Natural/isZero value.dims
+                                    then  Lude.Compiled.ok
+                                            Output
+                                            ( mkOutput
+                                                (ImportSet.custom customImport)
+                                                ( wrapNullable
+                                                    (\(src : Text) -> "${typeName}._decode(${src})")
+                                                )
+                                            )
+                                    else  if    dimsIsOne
+                                    then  let elemCast =
+                                                if    value.elementIsNullable
+                                                then  "list[str | None]"
+                                                else  "list[str]"
 
-                                            in  if    Natural/isZero value.dims
-                                                then  Lude.Compiled.ok
-                                                        Output
-                                                        ( mkOutput
-                                                            enumImport
-                                                            (enumDecode typeName)
-                                                        )
-                                                else  if    dimsIsOne
-                                                then  Lude.Compiled.ok
-                                                        Output
-                                                        ( mkOutput
-                                                            ( ImportSet.combine
-                                                                enumImport
-                                                                ImportSet.enumArray
-                                                            )
-                                                            (enumArrayDecode typeName)
-                                                        )
-                                                else  Lude.Compiled.report
-                                                        Output
-                                                        [ input.pgName
-                                                        , name.inSnakeCase
-                                                        ]
-                                                        "Array of an enum with dimensionality > 1 is not supported"
-                                      , Composite =
-                                          \ ( composite
-                                            : { fields :
-                                                  List CustomKind.CompositeField
-                                              , order : Natural
-                                              }
-                                            ) ->
-                                            if    Natural/isZero value.dims
-                                            then  Lude.Compiled.ok
-                                                    Output
-                                                    ( mkOutput
-                                                        ( ImportSet.customComposite
-                                                            (customImport composite.order)
-                                                        )
-                                                        ( compositeDecode
-                                                            typeName
-                                                            composite.fields
+                                          let elemDecode =
+                                                if    value.elementIsNullable
+                                                then  "None if v is None else ${typeName}._decode(v)"
+                                                else  "${typeName}._decode(v)"
+
+                                          in  Lude.Compiled.ok
+                                                Output
+                                                ( mkOutput
+                                                    ( ImportSet.combine
+                                                        (ImportSet.custom customImport)
+                                                        ImportSet.enumArray
+                                                    )
+                                                    ( wrapNullable
+                                                        ( \(src : Text) ->
+                                                            "[${elemDecode} for v in cast(${elemCast}, require_array(${src}))]"
                                                         )
                                                     )
-                                            else  Lude.Compiled.report
-                                                    Output
-                                                    [ input.pgName
-                                                    , name.inSnakeCase
-                                                    ]
-                                                    "Array of a composite type is not supported (element-wise decode is unimplemented)"
-                                      , Absent =
-                                          Lude.Compiled.report
+                                                )
+                                    else  Lude.Compiled.report
                                             Output
-                                            [ name.inSnakeCase ]
-                                            "Custom type not found in project customTypes"
-                                      }
-                                      (lookup name)
+                                            [ input.pgName, name.inSnakeCase ]
+                                            "Array of dimensionality > 1 is not supported"
                             )
                             ( Lude.Compiled.report
                                 Output
@@ -242,6 +156,4 @@ let run =
 
         in  Lude.Compiled.flatMap Value.Output Output buildOutput compiledValue
 
-let Run = Config -> CustomKind.Lookup -> Input -> Lude.Compiled.Type Output
-
-in  { Input, Output, Run, run }
+in  Sdk.Sigs.interpreter Config Input Output run

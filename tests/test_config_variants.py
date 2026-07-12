@@ -66,7 +66,7 @@ def test_absent_config_key_defaults_both_fields(generated_tree: Path) -> None:
 
 
 def test_unknown_config_key_is_ignored_not_rejected(generated_tree: Path) -> None:
-    """An extra key not in Config.dhall (bogusField) does not fail generation."""
+    """An extra key not in the generator's Config type (bogusField) does not fail generation."""
     package = _package_dir(generated_tree, "python-unknown-key")
     assert package.name == "unknown_key_client"
     assert not (package / "sync").exists()

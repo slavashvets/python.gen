@@ -4,9 +4,9 @@ let Lude = ../Deps/Lude.dhall
 
 let Model = ../Deps/Contract.dhall
 
-let ImportSet = ../Structures/ImportSet.dhall
+let Sdk = ../Deps/Sdk.dhall
 
-let CustomKind = ../Structures/CustomKind.dhall
+let ImportSet = ../Structures/ImportSet.dhall
 
 let OnUnsupported = ../Structures/OnUnsupported.dhall
 
@@ -14,11 +14,17 @@ let ResultColumns = ./ResultColumns.dhall
 
 let Compiled = Lude.Compiled
 
+-- rowClassName is supplied by the caller (Query.dhall derives it from the
+-- query's own name) rather than living on Model.Result, so it rides on this
+-- interpreter's own local Config instead of widening Input away from
+-- Model.Result. ResultColumns below does not need it, so it is projected
+-- back down to the narrower shared shape at that call site.
 let Config =
       { packageName : Text
       , importName : Text
       , emitSync : Bool
       , onUnsupported : OnUnsupported.Mode
+      , rowClassName : Text
       }
 
 let Input = Model.Result
@@ -63,10 +69,8 @@ let cardinalityShape
 
 let rowsOutput =
       \(config : Config) ->
-      \(lookup : CustomKind.Lookup) ->
-      \(rowClassName : Text) ->
       \(rows : Model.ResultRows) ->
-        let shape = cardinalityShape rows.cardinality rowClassName
+        let shape = cardinalityShape rows.cardinality config.rowClassName
 
         let columns =
               Prelude.NonEmpty.toList Model.Member rows.columns
@@ -78,7 +82,7 @@ let rowsOutput =
                   { returnType = shape.returnType
                   , helperName = shape.helperName
                   , rowClass = Some
-                    { name = rowClassName
+                    { name = config.rowClassName
                     , fieldsBlock = cols.fieldsBlock
                     , decodeBlock = cols.decodeBlock
                     }
@@ -86,19 +90,20 @@ let rowsOutput =
                   , callsDecode = True
                   }
               )
-              (ResultColumns.run config lookup rowClassName columns)
+              ( ResultColumns.run
+                  config.{ packageName, importName, emitSync, onUnsupported }
+                  columns
+              )
 
 let run =
       \(config : Config) ->
-      \(lookup : CustomKind.Lookup) ->
-      \(rowClassName : Text) ->
       \(input : Input) ->
         merge
           { Void = Compiled.ok Output (noResult "None" "execute_void")
           , RowsAffected =
               Compiled.ok Output (noResult "int" "execute_rows_affected")
-          , Rows = rowsOutput config lookup rowClassName
+          , Rows = rowsOutput config
           }
           input
 
-in  { Input, Output, RowClass, run }
+in  Sdk.Sigs.interpreter Config Input Output run /\ { RowClass }

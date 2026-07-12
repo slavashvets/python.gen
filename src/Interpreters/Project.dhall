@@ -6,12 +6,6 @@ let Model = ../Deps/Contract.dhall
 
 let Sdk = ../Deps/Sdk.dhall
 
-let CustomKind = ../Structures/CustomKind.dhall
-
-let PyIdent = ../Structures/PyIdent.dhall
-
-let Value = ./Value.dhall
-
 let QueryGen = ./Query.dhall
 
 let CustomTypeGen = ./CustomType.dhall
@@ -38,7 +32,20 @@ let OnUnsupported = ../Structures/OnUnsupported.dhall
 
 let Report = { path : List Text, message : Text }
 
+-- The generator's public Config: every field is independently Optional, so a
+-- project may omit the whole `config:` block or any subset of its keys.
+-- `run` below resolves the fallbacks itself (packageName from the project
+-- name, emitSync off, onUnsupported Fail); there is no separate config type
+-- or resolve step between package.dhall and here.
 let Config =
+      { packageName : Optional Text
+      , emitSync : Optional Bool
+      , onUnsupported : Optional OnUnsupported.Mode
+      }
+
+-- The fully-resolved shape every downstream interpreter (Query, CustomType,
+-- and everything below them) actually declares as its own `Config`.
+let ResolvedConfig =
       { packageName : Text
       , importName : Text
       , emitSync : Bool
@@ -69,44 +76,6 @@ let withHeader =
       \(file : Lude.File.Type) ->
         { path = file.path, content = generatedHeader ++ file.content }
 
--- Internal interpreter config (importName etc.) is only needed to satisfy
--- Value.run's signature; rendering a composite field's pyType does not read it.
-let lookupConfig
-    : Config
-    = { packageName = ""
-      , importName = ""
-      , emitSync = False
-      , onUnsupported = OnUnsupported.Mode.Fail
-      }
-
--- Render a composite member's Python type purely. The Err branch is unreachable
--- for a valid composite (CustomType.run fails the whole generation first on any
--- unsupported field type), so the fallback string is dead.
-let memberPyType =
-      \(member : Model.Member) ->
-        let valuePyType =
-              merge
-                { Ok =
-                    \(wrapped : { value : Value.Output, warnings : List Report }) ->
-                      wrapped.value.pyType
-                , Err = \(_ : Report) -> "object"
-                }
-                (Value.run lookupConfig member.value)
-
-        in  valuePyType ++ (if member.isNullable then " | None" else "")
-
-let compositeFields =
-      \(members : List Model.Member) ->
-        Prelude.List.map
-          Model.Member
-          CustomKind.CompositeField
-          ( \(member : Model.Member) ->
-              { fieldName = PyIdent.pySafeName member.name.inSnakeCase
-              , pyType = memberPyType member
-              }
-          )
-          members
-
 -- Schema-qualified type names for psycopg CompositeInfo.fetch (search-path
 -- safe). Reads CustomTypeGen.Output (already a combineOutputs parameter, and
 -- already the post-Skip-filter surviving set), not Model.CustomType, so
@@ -136,58 +105,18 @@ let enumPgNames =
               customTypes
           )
 
--- A custom type referenced by a Scalar.Custom name resolves by matching its
--- snake-case key. The query/column carries a distinct Name occurrence, so the
--- lookup compares by inSnakeCase rather than relying on record identity.
-let IndexedCustomType = { index : Natural, value : Model.CustomType }
-
--- pgn emits customTypes alphabetically by name, so the list index is the type's
--- alphabetical order. The import renderer sorts on it to keep the per-module
--- `from ..types.X import Y` block alphabetical independent of column order.
-let buildLookup =
-      \(customTypes : List Model.CustomType) ->
-        Prelude.List.fold
-          IndexedCustomType
-          (Prelude.List.indexed Model.CustomType customTypes)
-          CustomKind.Lookup
-          ( \(entry : IndexedCustomType) ->
-            \(rest : CustomKind.Lookup) ->
-            \(name : Model.Name) ->
-              let ct = entry.value
-
-              -- Text/equal is a pgn embedded-Dhall builtin, absent from the Dhall
-              -- standard 23.1 Prelude. PyIdent.dhall's replace-trick cannot stand in
-              -- here: this branch returns a structural TypeKind, not Text. gen-sdk's
-              -- Fixtures module relies on the same builtin; a kind tag or a Natural
-              -- index on Scalar.Custom is a planned upstream ask.
-              in  if    Text/equal name.inSnakeCase ct.name.inSnakeCase
-                  then  merge
-                          { Composite =
-                              \(members : List Model.Member) ->
-                                CustomKind.TypeKind.Composite
-                                  { fields = compositeFields members
-                                  , order = entry.index
-                                  }
-                          , Enum =
-                              \(_ : List Model.EnumVariant) ->
-                                CustomKind.TypeKind.Enum entry.index
-                          , Domain =
-                              \(_ : Model.Value) -> CustomKind.TypeKind.Absent
-                          }
-                          ct.definition
-                  else  rest name
-          )
-          (\(_ : Model.Name) -> CustomKind.TypeKind.Absent)
-
 let combineOutputs =
-      \(config : Config) ->
+      \(config : ResolvedConfig) ->
       \(input : Input) ->
-      \(queries : List QueryGen.Output) ->
       -- Already the post-Skip-filter surviving set (see `run`); equal to
-      -- input.customTypes' compiled outputs verbatim when nothing was skipped
+      -- input.queries' compiled outputs verbatim when nothing was skipped
       -- (including every Fail-mode run, since Fail never drops anything).
-      -- Facade/typesInit/register entries are built from this, not
-      -- input.customTypes, so a skipped type leaves no dangling export.
+      -- Facade/statement/row entries are built from this, not input.queries,
+      -- so a skipped query leaves no dangling export.
+      \(queries : List QueryGen.Output) ->
+      -- Same as above, but for customTypes. Facade/typesInit/register
+      -- entries are built from this, not input.customTypes, so a skipped
+      -- type leaves no dangling export.
       \(customTypes : List CustomTypeGen.Output) ->
         -- The generator emits the _generated subtree plus the package-root
         -- __init__.py facade. The rest of the shell (pyproject.toml, py.typed) is
@@ -423,21 +352,54 @@ let combineOutputs =
 -- warning list. Custom types use a pair of plain functions instead of an
 -- equivalent record (see `typeSucceeds`/`typeWarning` below) purely because
 -- that was the faster shape empirically for the type side, and the query
--- side re-uses `queryChecks` because `lookup` (built from the surviving
--- custom types) threads into every query's Member/ParamsMember resolution:
--- calling QueryGen.run config lookup query from more than one place in this
--- function (once to decide keep/drop, again to render, again for a
--- warning -- each a fresh, separate call site in the source) measurably
--- multiplies Dhall's normalization cost per extra call site, confirmed by
--- bisection against `pgn generate` wall time (a few seconds regressed to
--- minutes with three call sites; this file keeps it to two: one to build
--- `queryChecks`, one for the final render).
+-- side re-uses `queryChecks` because calling QueryGen.run config query from
+-- more than one place in this function (once to decide keep/drop, again to
+-- render, again for a warning -- each a fresh, separate call site in the
+-- source) measurably multiplies Dhall's normalization cost per extra call
+-- site, confirmed by bisection against `pgn generate` wall time (a few
+-- seconds regressed to minutes with three call sites; this file keeps it to
+-- two: one to build `queryChecks`, one for the final render).
 let QueryCheck = { query : Model.Query, keep : Bool, warning : Optional Report }
 
 let run =
       \(config : Config) ->
       \(input : Input) ->
-        let skip = merge { Fail = False, Skip = True } config.onUnsupported
+        -- config's fields are independently Optional (a project may omit the
+        -- whole config: block or any subset of its keys); the fallbacks are
+        -- resolved here rather than in a separate config type or resolve
+        -- step, since this is the root interpreter and Config above is
+        -- exactly the generator's public Config.
+        let packageName =
+              Prelude.Optional.fold
+                Text
+                config.packageName
+                Text
+                (\(t : Text) -> t)
+                input.name.inKebabCase
+
+        let emitSync =
+              Prelude.Optional.fold
+                Bool
+                config.emitSync
+                Bool
+                (\(b : Bool) -> b)
+                False
+
+        let onUnsupported =
+              Prelude.Optional.fold
+                OnUnsupported.Mode
+                config.onUnsupported
+                OnUnsupported.Mode
+                (\(m : OnUnsupported.Mode) -> m)
+                OnUnsupported.Mode.Fail
+
+        let importName = Prelude.Text.replace "-" "_" packageName
+
+        let resolvedConfig
+            : ResolvedConfig
+            = { packageName, importName, emitSync, onUnsupported }
+
+        let skip = merge { Fail = False, Skip = True } resolvedConfig.onUnsupported
 
         let typeSucceeds
             : Model.CustomType -> Bool
@@ -448,7 +410,7 @@ let run =
                         True
                   , Err = \(_ : Report) -> False
                   }
-                  (CustomTypeGen.run config ct)
+                  (CustomTypeGen.run resolvedConfig ct)
 
         -- Nested under the type's own name so the warning names the type
         -- that failed, not just the inner member/column that triggered it
@@ -463,7 +425,7 @@ let run =
                   , Err =
                       \(err : Report) -> Some { path = [ ct.name.inSnakeCase ] # err.path, message = err.message }
                   }
-                  (CustomTypeGen.run config ct)
+                  (CustomTypeGen.run resolvedConfig ct)
 
         -- A skipped custom type resolves to Absent for any query that
         -- references it, and that query's own Member/ParamsMember
@@ -476,8 +438,6 @@ let run =
               then  Prelude.List.filter Model.CustomType typeSucceeds input.customTypes
               else  input.customTypes
 
-        let lookup = buildLookup effectiveCustomTypes
-
         -- Fail mode: identical to the pre-Skip code (traverseList straight
         -- over input.customTypes), so its error message/path is unchanged.
         let typesForCombine
@@ -485,7 +445,7 @@ let run =
             = Lude.Compiled.traverseList
                 Model.CustomType
                 CustomTypeGen.Output
-                (\(ct : Model.CustomType) -> CustomTypeGen.run config ct)
+                (\(ct : Model.CustomType) -> CustomTypeGen.run resolvedConfig ct)
                 effectiveCustomTypes
 
         let queryChecks
@@ -500,7 +460,7 @@ let run =
                             { query, keep = True, warning = None Report }
                       , Err = \(err : Report) -> { query, keep = False, warning = Some err }
                       }
-                      (QueryGen.run config lookup query)
+                      (QueryGen.run resolvedConfig query)
                 )
                 input.queries
 
@@ -521,7 +481,7 @@ let run =
             = Lude.Compiled.traverseList
                 Model.Query
                 QueryGen.Output
-                (\(query : Model.Query) -> QueryGen.run config lookup query)
+                (\(query : Model.Query) -> QueryGen.run resolvedConfig query)
                 effectiveQueries
 
         let skipWarnings
@@ -541,7 +501,7 @@ let run =
                 (List QueryGen.Output)
                 (List CustomTypeGen.Output)
                 Output
-                (combineOutputs config input)
+                (combineOutputs resolvedConfig input)
                 queriesForCombine
                 typesForCombine
 

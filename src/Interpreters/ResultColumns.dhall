@@ -4,9 +4,9 @@ let Lude = ../Deps/Lude.dhall
 
 let Model = ../Deps/Contract.dhall
 
-let ImportSet = ../Structures/ImportSet.dhall
+let Sdk = ../Deps/Sdk.dhall
 
-let CustomKind = ../Structures/CustomKind.dhall
+let ImportSet = ../Structures/ImportSet.dhall
 
 let OnUnsupported = ../Structures/OnUnsupported.dhall
 
@@ -59,8 +59,6 @@ let assemble
 
 let run =
       \(config : Config) ->
-      \(lookup : CustomKind.Lookup) ->
-      \(rowClassName : Text) ->
       \(input : Input) ->
         Compiled.map
           (List Member.Output)
@@ -73,9 +71,9 @@ let run =
                   Compiled.nest
                     Member.Output
                     member.pgName
-                    (Member.run config lookup member)
+                    (Member.run config member)
               )
               input
           )
 
-in  { Input, Output, run }
+in  Sdk.Sigs.interpreter Config Input Output run

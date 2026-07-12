@@ -4,9 +4,9 @@ let Prelude = ../Deps/Prelude.dhall
 
 let Model = ../Deps/Contract.dhall
 
-let ImportSet = ../Structures/ImportSet.dhall
+let Sdk = ../Deps/Sdk.dhall
 
-let CustomKind = ../Structures/CustomKind.dhall
+let ImportSet = ../Structures/ImportSet.dhall
 
 let OnUnsupported = ../Structures/OnUnsupported.dhall
 
@@ -232,7 +232,6 @@ let isJsonArray =
 
 let run =
       \(config : Config) ->
-      \(lookup : CustomKind.Lookup) ->
       \(input : Input) ->
         let fieldName = pySafeName input.name.inSnakeCase
 
@@ -252,40 +251,6 @@ let run =
               if    needsJsonbImport
               then  wrapJson "Jsonb"
               else  if needsJsonImport then wrapJson "Json" else fieldName
-
-        -- psycopg binds a bare tuple to an anonymous composite, but cannot adapt
-        -- a dataclass, so a composite param is converted to its field tuple.
-        let compositeBind =
-              \(fields : List CustomKind.CompositeField) ->
-                let joinedFields =
-                      Prelude.Text.concatMapSep
-                        ", "
-                        CustomKind.CompositeField
-                        ( \(f : CustomKind.CompositeField) ->
-                            "${fieldName}.${f.fieldName}"
-                        )
-                        fields
-
-                -- concatMapSep never emits a separator for a single-element list, so
-                -- a one-field composite would render "(x.f)": parens around a bare
-                -- expression, not a tuple. Python only treats trailing-comma parens
-                -- as a 1-tuple, so force it for exactly one field; concatMapSep
-                -- already inserts the internal comma for two or more.
-                let trailingComma =
-                      if    Prelude.Natural.equal
-                              ( Prelude.List.length
-                                  CustomKind.CompositeField
-                                  fields
-                              )
-                              1
-                      then  ","
-                      else  ""
-
-                let tupleExpr = "(" ++ joinedFields ++ trailingComma ++ ")"
-
-                in  if    input.isNullable
-                    then  "None if ${fieldName} is None else ${tupleExpr}"
-                    else  tupleExpr
 
         let buildOutput =
               \(value : Value.Output) ->
@@ -314,56 +279,36 @@ let run =
                       (Lude.Compiled.Type Output)
                       ( \(name : Model.Name) ->
                           let customImport =
-                                \(order : Natural) ->
-                                  { className = name.inPascalCase
-                                  , moduleName = name.inSnakeCase
-                                  , order
-                                  }
-
-                          in  merge
-                                { Enum =
-                                    \(order : Natural) ->
-                                      Lude.Compiled.ok
-                                        Output
-                                        ( mkOutput
-                                            ( ImportSet.combine
-                                                value.imports
-                                                ( ImportSet.customEnum
-                                                    (customImport order)
-                                                )
-                                            )
-                                            defaultBind
-                                        )
-                                , Composite =
-                                    \ ( composite
-                                      : { fields :
-                                            List CustomKind.CompositeField
-                                        , order : Natural
-                                        }
-                                      ) ->
-                                      if    Natural/isZero value.dims
-                                      then  Lude.Compiled.ok
-                                              Output
-                                              ( mkOutput
-                                                  ( ImportSet.combine
-                                                      value.imports
-                                                      ( ImportSet.customComposite
-                                                          (customImport composite.order)
-                                                      )
-                                                  )
-                                                  (compositeBind composite.fields)
-                                              )
-                                      else  Lude.Compiled.report
-                                              Output
-                                              [ input.pgName, name.inSnakeCase ]
-                                              "Array of a composite type as a parameter is not supported"
-                                , Absent =
-                                    Lude.Compiled.report
-                                      Output
-                                      [ name.inSnakeCase ]
-                                      "Custom type not found in project customTypes"
+                                { className = name.inPascalCase
+                                , moduleName = name.inSnakeCase
                                 }
-                                (lookup name)
+
+                          let scalarEncode =
+                                if    input.isNullable
+                                then  "None if ${fieldName} is None else ${fieldName}._encode()"
+                                else  "${fieldName}._encode()"
+
+                          let arrayElemEncode =
+                                if    value.elementIsNullable
+                                then  "None if x is None else x._encode()"
+                                else  "x._encode()"
+
+                          let arrayEncode =
+                                let base = "[${arrayElemEncode} for x in ${fieldName}]"
+
+                                in  if    input.isNullable
+                                    then  "None if ${fieldName} is None else ${base}"
+                                    else  base
+
+                          let encodeExpr =
+                                if Natural/isZero value.dims then scalarEncode else arrayEncode
+
+                          in  Lude.Compiled.ok
+                                Output
+                                ( mkOutput
+                                    (ImportSet.combine value.imports (ImportSet.custom customImport))
+                                    encodeExpr
+                                )
                       )
                       ( if    isJsonArrayParam
                         then  Lude.Compiled.report
@@ -384,6 +329,4 @@ let run =
 
         in  Lude.Compiled.flatMap Value.Output Output buildOutput compiledValue
 
-let Run = Config -> CustomKind.Lookup -> Input -> Lude.Compiled.Type Output
-
-in  { Input, Output, Run, run }
+in  Sdk.Sigs.interpreter Config Input Output run

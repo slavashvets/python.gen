@@ -55,7 +55,7 @@ let customImportLines
           ( \(c : ImportSet.CustomImport) ->
               "from .types." ++ c.moduleName ++ " import " ++ c.className
           )
-          (ImportSet.sortedCustoms imports)
+          imports.customTypes
 
 let renderImports
     : ImportSet.Type -> Text
