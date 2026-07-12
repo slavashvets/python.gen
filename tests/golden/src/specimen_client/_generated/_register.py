@@ -4,7 +4,7 @@
 
 from __future__ import annotations
 
-from psycopg import AsyncConnection
+from psycopg import AsyncConnection, Connection
 from psycopg.types import TypeInfo
 from psycopg.types.composite import CompositeInfo, register_composite
 
@@ -21,6 +21,19 @@ async def register_types(conn: AsyncConnection[object]) -> None:
         register_composite(composite_info, conn)
     for name in _ENUM_TYPES:
         enum_info = await TypeInfo.fetch(conn, name)
+        if enum_info is None:
+            raise LookupError(f"enum type {name!r} not found; cannot register it")
+        enum_info.register(conn)
+
+
+def register_types_sync(conn: Connection[object]) -> None:
+    for name in _COMPOSITE_TYPES:
+        composite_info = CompositeInfo.fetch(conn, name)
+        if composite_info is None:
+            raise LookupError(f"composite type {name!r} not found; cannot register it")
+        register_composite(composite_info, conn)
+    for name in _ENUM_TYPES:
+        enum_info = TypeInfo.fetch(conn, name)
         if enum_info is None:
             raise LookupError(f"enum type {name!r} not found; cannot register it")
         enum_info.register(conn)

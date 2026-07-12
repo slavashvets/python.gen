@@ -28,7 +28,6 @@ import pytest
 from tests._harness import (
     FIXTURE_PROJECT,
     GOLDEN_DIR,
-    GOLDEN_DIR_SYNC,
     HERE,
     SRC_DIR,
     run_pgn,
@@ -175,20 +174,20 @@ let Target = ./Interpreters/{interpreter}.dhall
 
 let Config =
       {{ packageName : Optional Text
-      , sync : Optional Bool
+      , emitSync : Optional Bool
       , onUnsupported : Optional OnUnsupported.Mode
       }}
 
 let Config/default =
       {{ packageName = None Text
-      , sync = None Bool
+      , emitSync = None Bool
       , onUnsupported = None OnUnsupported.Mode
       }}
 
 let interpreterConfig =
       {{ packageName = "contract-probe"
       , importName = "contract_probe"
-      , sync = False
+      , emitSync = False
       , onUnsupported = OnUnsupported.Mode.Fail
       }}
 
@@ -474,18 +473,14 @@ def test_skip_unsupported_drops_offending_units_and_cascades(
 
 
 def test_custom_imports_are_unique_and_deterministic() -> None:
-    surfaces = [
-        GOLDEN_DIR / "src" / "specimen_client" / "_generated" / "statements",
-        GOLDEN_DIR_SYNC / "src" / "specimen_sync_client" / "_generated" / "statements",
-    ]
+    statements = GOLDEN_DIR / "src" / "specimen_client" / "_generated" / "statements"
     custom_import = re.compile(r"^from \.\.types\.[a-zA-Z0-9_]+ import [a-zA-Z0-9_]+$", re.MULTILINE)
 
-    for statements in surfaces:
-        insert_imports = custom_import.findall((statements / "insert_specimen.py").read_text())
-        assert insert_imports == [
-            "from ..types.mood import Mood",
-            "from ..types.point_2_d import Point2D",
-        ]
-        for module in statements.glob("*.py"):
-            imports = custom_import.findall(module.read_text())
-            assert len(imports) == len(set(imports)), f"duplicate custom import in {module}"
+    insert_imports = custom_import.findall((statements / "insert_specimen.py").read_text())
+    assert insert_imports == [
+        "from ..types.mood import Mood",
+        "from ..types.point_2_d import Point2D",
+    ]
+    for module in statements.glob("*.py"):
+        imports = custom_import.findall(module.read_text())
+        assert len(imports) == len(set(imports)), f"duplicate custom import in {module}"

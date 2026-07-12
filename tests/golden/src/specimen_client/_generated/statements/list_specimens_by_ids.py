@@ -9,9 +9,10 @@ from dataclasses import dataclass
 from typing import cast as _cast
 from uuid import UUID
 
-from psycopg import AsyncConnection
+from psycopg import AsyncConnection, Connection
 
 from .._runtime import fetch_many as _fetch_many
+from ..sync._runtime import fetch_many as _fetch_many_sync
 from ..types.mood import Mood
 
 
@@ -53,3 +54,14 @@ async def list_specimens_by_ids(
         "pub_ids": pub_ids,
     }
     return await _fetch_many(conn, _SQL, params, _decode_row)
+
+
+def list_specimens_by_ids_sync(
+    conn: Connection[object],
+    *,
+    pub_ids: list[UUID | None] | None,
+) -> list[ListSpecimensByIdsRow]:
+    params: dict[str, object] = {
+        "pub_ids": pub_ids,
+    }
+    return _fetch_many_sync(conn, _SQL, params, _decode_row)

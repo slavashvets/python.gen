@@ -8,9 +8,10 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import cast as _cast
 
-from psycopg import AsyncConnection
+from psycopg import AsyncConnection, Connection
 
 from .._runtime import fetch_many as _fetch_many
+from ..sync._runtime import fetch_many as _fetch_many_sync
 
 
 @dataclass(frozen=True, slots=True)
@@ -51,3 +52,14 @@ async def list_specimens_by_class(
         "class": class_,
     }
     return await _fetch_many(conn, _SQL, params, _decode_row)
+
+
+def list_specimens_by_class_sync(
+    conn: Connection[object],
+    *,
+    class_: str | None,
+) -> list[ListSpecimensByClassRow]:
+    params: dict[str, object] = {
+        "class": class_,
+    }
+    return _fetch_many_sync(conn, _SQL, params, _decode_row)

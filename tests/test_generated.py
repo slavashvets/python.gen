@@ -13,11 +13,13 @@ from __future__ import annotations
 
 import asyncio
 import importlib
+import inspect
 import json
 import subprocess
 import sys
 import uuid
 from collections.abc import Iterator
+from contextlib import contextmanager
 from decimal import Decimal
 from datetime import date
 from pathlib import Path
@@ -26,7 +28,7 @@ import psycopg
 import pytest
 from psycopg.conninfo import make_conninfo
 
-from tests._harness import FIXTURE_PROJECT, GOLDEN_DIR, GOLDEN_DIR_SYNC, HERE, ensure_droppable, run_pgn
+from tests._harness import FIXTURE_PROJECT, GOLDEN_DIR, HERE, ensure_droppable, run_pgn
 
 HARNESS_ROOT = HERE.parent
 
@@ -34,10 +36,25 @@ HARNESS_ROOT = HERE.parent
 # __init__.py facade; the rest of the shell (pyproject.toml, py.typed) is
 # hand-written and lives in golden as a committed fixture, not produced by
 # generate.
-GENERATED_SUBTREE = Path("src/specimen_client/_generated")
-FACADE_INIT = Path("src/specimen_client/__init__.py")
-GENERATED_SUBTREE_SYNC = Path("src/specimen_sync_client/_generated")
-FACADE_INIT_SYNC = Path("src/specimen_sync_client/__init__.py")
+GENERATED_PACKAGE = Path("src/specimen_client")
+QUERY_NAMES = (
+    "bump_specimen_revision",
+    "get_specimen",
+    "get_tagged_item",
+    "insert_specimen",
+    "insert_tagged_item",
+    "list_specimens_by_class",
+    "list_specimens_by_feeling",
+    "list_specimens_by_ids",
+    "list_specimens_by_moods",
+    "list_specimens_keyword_column",
+    "search_specimens",
+)
+ROW_NAMES = {
+    name: "".join(part.title() for part in name.split("_")) + "Row"
+    for name in QUERY_NAMES
+    if name != "bump_specimen_revision"
+}
 
 
 def test_fixture_project_analyses_clean(pgn_bin: str, pgn_admin_url: str, fixture_copy: Path) -> None:
@@ -78,31 +95,31 @@ def test_generate_produces_python_package(generated_tree: Path) -> None:
     assert list(generated_tree.rglob("*.py")), "generator produced no Python modules"
 
 
-def _relative_files(root: Path) -> set[Path]:
+def _relative_files(root: Path, *, exclude: frozenset[Path] = frozenset()) -> set[Path]:
     # Skip bytecode: the generator never emits it, but a local `import specimen_client`
     # leaves __pycache__ under golden and would false-fail the file-set comparison.
     return {
         p.relative_to(root)
         for p in root.rglob("*")
-        if p.is_file() and "__pycache__" not in p.parts
+        if p.is_file() and "__pycache__" not in p.parts and p.relative_to(root) not in exclude
     }
 
 
 def test_generated_matches_golden(generated_tree: Path) -> None:
-    """The generated subtree and the facade must equal golden's byte for byte.
+    """Every generated package file must equal golden byte for byte.
 
-    Generate produces the <pkg>/_generated subtree and the package-root
-    __init__.py facade; the rest of the shell in golden is a hand-written
+    Generate produces the <pkg>/_generated subtree plus the root and sync
+    facades; the rest of the shell in golden is a hand-written
     committed fixture and stays out of this comparison. Update flow when the
     generator legitimately changes: re-run `pgn generate` in tests/fixture-project
-    and rsync the fresh _generated subtree plus the facade into golden (see
+    and copy the fresh _generated subtree plus both facades into golden (see
     tests/golden/README.md), then review the diff.
     """
-    produced_root = generated_tree / GENERATED_SUBTREE
-    golden_root = GOLDEN_DIR / GENERATED_SUBTREE
+    produced_root = generated_tree / GENERATED_PACKAGE
+    golden_root = GOLDEN_DIR / GENERATED_PACKAGE
 
     produced = _relative_files(produced_root)
-    golden = _relative_files(golden_root)
+    golden = _relative_files(golden_root, exclude=frozenset({Path("py.typed")}))
 
     missing = sorted(str(p) for p in golden - produced)
     extra = sorted(str(p) for p in produced - golden)
@@ -113,59 +130,20 @@ def test_generated_matches_golden(generated_tree: Path) -> None:
     for rel in sorted(produced, key=str):
         if (produced_root / rel).read_text() != (golden_root / rel).read_text():
             mismatched.append(str(rel))
-
-    if (generated_tree / FACADE_INIT).read_text() != (GOLDEN_DIR / FACADE_INIT).read_text():
-        mismatched.append(str(FACADE_INIT))
 
     assert not mismatched, (
         "generated output drifted from golden in: "
         + ", ".join(mismatched)
-        + "\nupdate via: rsync the fresh _generated subtree and the facade into golden (see tests/golden/README.md)"
+        + "\nupdate via: mise run golden (see tests/golden/README.md)"
     )
 
 
-def test_generated_sync_matches_golden(generated_tree: Path) -> None:
-    """Sync-surface counterpart of test_generated_matches_golden.
+def test_generated_passes_basedpyright_strict(full_package: Path, tmp_path: Path) -> None:
+    """basedpyright strict on the fresh full package: zero errors and warnings.
 
-    generated_tree points at the "python" artifact; the sync surface's
-    output lives in the sibling "python_sync" artifact directory produced by
-    the same pgn generate call (see the generated_tree fixture).
-    """
-    generated_tree_sync = generated_tree.parent.parent / "artifacts" / "python_sync"
-    produced_root = generated_tree_sync / GENERATED_SUBTREE_SYNC
-    golden_root = GOLDEN_DIR_SYNC / GENERATED_SUBTREE_SYNC
-
-    produced = _relative_files(produced_root)
-    golden = _relative_files(golden_root)
-
-    missing = sorted(str(p) for p in golden - produced)
-    extra = sorted(str(p) for p in produced - golden)
-    assert not missing, f"golden files not produced by the generator: {missing}"
-    assert not extra, f"generator emitted files absent from golden: {extra}"
-
-    mismatched: list[str] = []
-    for rel in sorted(produced, key=str):
-        if (produced_root / rel).read_text() != (golden_root / rel).read_text():
-            mismatched.append(str(rel))
-
-    if (generated_tree_sync / FACADE_INIT_SYNC).read_text() != (GOLDEN_DIR_SYNC / FACADE_INIT_SYNC).read_text():
-        mismatched.append(str(FACADE_INIT_SYNC))
-
-    assert not mismatched, (
-        "generated sync output drifted from golden in: "
-        + ", ".join(mismatched)
-        + "\nupdate via: mise run golden (see tests/golden_sync/README.md)"
-    )
-
-
-def test_generated_passes_basedpyright_strict(tmp_path: Path) -> None:
-    """basedpyright strict on the FULL golden package: zero errors and warnings.
-
-    The golden package (hand-written shell + the generated _generated subtree)
-    is the committed contract; test_generated_matches_golden proves the fresh
-    output equals golden's _generated subtree, so checking golden checks the
-    generator's output. psycopg resolves from the harness venv. The config scopes
-    the run to golden's `src` so the harness tests are not pulled in.
+    The full_package fixture overlays the fresh generated tree and both facades
+    onto the hand-written shell. psycopg resolves from the harness venv. The
+    config scopes the run to that package's `src` so harness tests stay excluded.
     """
     config = tmp_path / "pyrightconfig.json"
     _ = config.write_text(
@@ -173,7 +151,7 @@ def test_generated_passes_basedpyright_strict(tmp_path: Path) -> None:
             {
                 "pythonVersion": "3.12",
                 "typeCheckingMode": "strict",
-                "include": [str(GOLDEN_DIR / "src")],
+                "include": [str(full_package / "src")],
                 "venvPath": str(HARNESS_ROOT),
                 "venv": ".venv",
                 "reportMissingModuleSource": False,
@@ -193,38 +171,7 @@ def test_generated_passes_basedpyright_strict(tmp_path: Path) -> None:
 
     summary = json.loads(result.stdout)["summary"]
     # basedpyright exits 0 with filesAnalyzed=0 when the include path matches nothing,
-    # so without this the strict gate would pass vacuously if the golden src ever moved.
-    assert summary["filesAnalyzed"] > 0, f"basedpyright analyzed no files; bad include path?\n{result.stdout}"
-    assert summary["errorCount"] == 0 and summary["warningCount"] == 0, (
-        f"basedpyright strict reported issues: {summary}\n{result.stdout}"
-    )
-
-
-def test_generated_sync_passes_basedpyright_strict(tmp_path: Path) -> None:
-    """basedpyright strict on the full sync-surface golden package."""
-    config = tmp_path / "pyrightconfig.json"
-    _ = config.write_text(
-        json.dumps(
-            {
-                "pythonVersion": "3.12",
-                "typeCheckingMode": "strict",
-                "include": [str(GOLDEN_DIR_SYNC / "src")],
-                "venvPath": str(HARNESS_ROOT),
-                "venv": ".venv",
-                "reportMissingModuleSource": False,
-            }
-        )
-    )
-    result = subprocess.run(
-        ["basedpyright", "--project", str(config), "--outputjson"],
-        capture_output=True,
-        text=True,
-    )
-
-    if not result.stdout.strip():
-        pytest.fail(f"basedpyright produced no JSON (exit {result.returncode}):\n{result.stderr}")
-
-    summary = json.loads(result.stdout)["summary"]
+    # so without this the strict gate would pass vacuously if the package src moved.
     assert summary["filesAnalyzed"] > 0, f"basedpyright analyzed no files; bad include path?\n{result.stdout}"
     assert summary["errorCount"] == 0 and summary["warningCount"] == 0, (
         f"basedpyright strict reported issues: {summary}\n{result.stdout}"
@@ -270,27 +217,79 @@ def _apply_migrations(db_url: str) -> None:
             _ = conn.execute(migration.read_text().encode())
 
 
-def _import_client(full_package: Path):  # noqa: ANN202 - dynamic module set
-    src = str(full_package / "src")
-    if src not in sys.path:
-        sys.path.insert(0, src)
+def _clear_client_modules() -> None:
     for name in list(sys.modules):
         if name == "specimen_client" or name.startswith("specimen_client."):
             del sys.modules[name]
-    return importlib.import_module
 
 
-def _import_client_sync(full_package_sync: Path):  # noqa: ANN202 - dynamic module set
-    src = str(full_package_sync / "src")
-    if src not in sys.path:
-        sys.path.insert(0, src)
-    for name in list(sys.modules):
-        if name == "specimen_sync_client" or name.startswith("specimen_sync_client."):
-            del sys.modules[name]
-    return importlib.import_module
+@contextmanager
+def _client_modules(full_package: Path):  # noqa: ANN202 - dynamic module set
+    src = str(full_package / "src")
+    original_path = sys.path.copy()
+    sys.path.insert(0, src)
+    _clear_client_modules()
+    try:
+        root = importlib.import_module("specimen_client")
+        sync = importlib.import_module("specimen_client.sync")
+        yield root, sync, importlib.import_module
+    finally:
+        _clear_client_modules()
+        sys.path[:] = original_path
 
 
-def test_roundtrip_type_mappings(full_package: Path, roundtrip_db: str) -> None:
+@pytest.fixture
+def client_modules(full_package: Path):  # noqa: ANN202 - dynamic module set
+    with _client_modules(full_package) as loaded:
+        yield loaded
+
+
+def test_combined_public_api_identity_and_signatures(full_package: Path) -> None:
+    with _client_modules(full_package) as (root, sync, import_module):
+        assert root.sync is sync
+
+        for name in QUERY_NAMES:
+            statement = import_module(f"specimen_client._generated.statements.{name}")
+            async_function = getattr(root, name)
+            sync_function = getattr(sync, name)
+            assert async_function is getattr(statement, name)
+            assert sync_function is getattr(statement, f"{name}_sync")
+            assert inspect.iscoroutinefunction(async_function)
+            assert not inspect.iscoroutinefunction(sync_function)
+
+            async_signature = inspect.signature(async_function)
+            sync_signature = inspect.signature(sync_function)
+            assert async_signature.return_annotation == sync_signature.return_annotation
+            async_params = list(async_signature.parameters.values())
+            sync_params = list(sync_signature.parameters.values())
+            assert len(async_params) == len(sync_params)
+            for index, (async_param, sync_param) in enumerate(zip(async_params, sync_params, strict=True)):
+                assert async_param.name == sync_param.name
+                assert async_param.kind == sync_param.kind
+                assert async_param.default == sync_param.default
+                if index == 0:
+                    assert async_param.annotation == "AsyncConnection[object]"
+                    assert sync_param.annotation == "Connection[object]"
+                else:
+                    assert async_param.annotation == sync_param.annotation
+
+            row_name = ROW_NAMES.get(name)
+            if row_name is not None:
+                row_class = getattr(statement, row_name)
+                assert getattr(root, row_name) is row_class
+                assert getattr(sync, row_name) is row_class
+
+        for name in ("Mood", "Point2D", "TagValue", "JsonValue", "NoRowError"):
+            assert getattr(root, name) is getattr(sync, name)
+
+        register = import_module("specimen_client._generated._register")
+        assert root.register_types is register.register_types
+        assert sync.register_types is register.register_types_sync
+        assert "register_types" in root.__all__
+        assert "register_types" in sync.__all__
+
+
+def test_roundtrip_type_mappings(client_modules, roundtrip_db: str) -> None:  # noqa: ANN001
     """INSERT then SELECT through the generated client, asserting the mappings.
 
     Exercises every generated statement and the full type surface: enum param +
@@ -300,30 +299,16 @@ def test_roundtrip_type_mappings(full_package: Path, roundtrip_db: str) -> None:
     rows-affected helper. Runs against a throwaway pg0 database.
     """
     _apply_migrations(roundtrip_db)
-    import_module = _import_client(full_package)
-
-    register = import_module("specimen_client._generated._register")
-    mood_mod = import_module("specimen_client._generated.types.mood")
-    point_mod = import_module("specimen_client._generated.types.point_2_d")
-    insert = import_module("specimen_client._generated.statements.insert_specimen")
-    get = import_module("specimen_client._generated.statements.get_specimen")
-    by_feeling = import_module("specimen_client._generated.statements.list_specimens_by_feeling")
-    by_ids = import_module("specimen_client._generated.statements.list_specimens_by_ids")
-    by_moods = import_module("specimen_client._generated.statements.list_specimens_by_moods")
-    by_class = import_module("specimen_client._generated.statements.list_specimens_by_class")
-    by_kw_col = import_module("specimen_client._generated.statements.list_specimens_keyword_column")
-    search = import_module("specimen_client._generated.statements.search_specimens")
-    bump = import_module("specimen_client._generated.statements.bump_specimen_revision")
-
-    Mood = mood_mod.Mood
-    Point2D = point_mod.Point2D
+    facade, _, _ = client_modules
+    Mood = facade.Mood
+    Point2D = facade.Point2D
 
     async def scenario() -> None:
         conn = await psycopg.AsyncConnection.connect(roundtrip_db, autocommit=True)
         try:
-            await register.register_types(conn)
+            await facade.register_types(conn)
 
-            inserted = await insert.insert_specimen(
+            inserted = await facade.insert_specimen(
                 conn,
                 doc_jsonb={"k": "v", "n": 1},
                 feeling=Mood.HAPPY,
@@ -351,6 +336,7 @@ def test_roundtrip_type_mappings(full_package: Path, roundtrip_db: str) -> None:
                 grid=None,
                 moods=[Mood.HAPPY, None, Mood.SAD],
             )
+            assert type(inserted) is facade.InsertSpecimenRow
 
             # enum column decodes to the generated StrEnum (identity, not just ==).
             assert isinstance(inserted.feeling, Mood)
@@ -380,21 +366,21 @@ def test_roundtrip_type_mappings(full_package: Path, roundtrip_db: str) -> None:
             specimen_id = inserted.id
 
             # Optional: hit returns the row, miss returns None.
-            hit = await get.get_specimen(conn, id=specimen_id)
+            hit = await facade.get_specimen(conn, id=specimen_id)
             assert hit is not None
             assert hit.id == specimen_id
             assert isinstance(hit.feeling, Mood)
             assert isinstance(hit.origin, Point2D)
             assert hit.maybe_uuid is None
-            miss = await get.get_specimen(conn, id=specimen_id + 10_000)
+            miss = await facade.get_specimen(conn, id=specimen_id + 10_000)
             assert miss is None
 
             # Multiple with enum param + enum/composite column decode.
-            feeling_rows = await by_feeling.list_specimens_by_feeling(conn, feeling=Mood.HAPPY)
+            feeling_rows = await facade.list_specimens_by_feeling(conn, feeling=Mood.HAPPY)
             assert len(feeling_rows) == 1
             assert feeling_rows[0].feeling is Mood.HAPPY
             assert isinstance(feeling_rows[0].origin, Point2D)
-            assert await by_feeling.list_specimens_by_feeling(conn, feeling=Mood.SAD) == []
+            assert await facade.list_specimens_by_feeling(conn, feeling=Mood.SAD) == []
 
             # Array param via ANY. This exercises the nullable-element branch
             # (list[T | None] | None). NOTE: the generator's non-null-element
@@ -408,39 +394,41 @@ def test_roundtrip_type_mappings(full_package: Path, roundtrip_db: str) -> None:
             # does infer it) and is guarded by checks:pgn-generate plus call-site
             # type-checking in apps/backend and apps/ingest, which pass list[UUID].
             # The generated client bodies are not strict-typechecked themselves.
-            id_rows = await by_ids.list_specimens_by_ids(conn, pub_ids=[inserted.pub_id])
+            id_rows = await facade.list_specimens_by_ids(conn, pub_ids=[inserted.pub_id])
             assert [r.pub_id for r in id_rows] == [inserted.pub_id]
-            assert await by_ids.list_specimens_by_ids(conn, pub_ids=[uuid.uuid4()]) == []
+            assert await facade.list_specimens_by_ids(conn, pub_ids=[uuid.uuid4()]) == []
 
             # Enum array param via ANY + enum array column decoded element-wise.
-            mood_rows = await by_moods.list_specimens_by_moods(conn, moods=[Mood.HAPPY])
+            mood_rows = await facade.list_specimens_by_moods(conn, moods=[Mood.HAPPY])
             assert [r.id for r in mood_rows] == [specimen_id]
             assert mood_rows[0].moods == [Mood.HAPPY, None, Mood.SAD]
             assert mood_rows[0].moods is not None
             assert mood_rows[0].moods[0] is Mood.HAPPY
-            assert await by_moods.list_specimens_by_moods(conn, moods=[Mood.SAD]) == []
+            assert await facade.list_specimens_by_moods(conn, moods=[Mood.SAD]) == []
 
             # Keyword-named param: class_ binds as %(class)s, so it must match by title.
-            class_rows = await by_class.list_specimens_by_class(conn, class_="alpha")
+            class_rows = await facade.list_specimens_by_class(conn, class_="alpha")
             assert [r.id for r in class_rows] == [specimen_id]
-            assert await by_class.list_specimens_by_class(conn, class_="nope") == []
+            assert await facade.list_specimens_by_class(conn, class_="nope") == []
 
             # Keyword-named result column: title AS "class" decodes to .class_.
-            kw_rows = await by_kw_col.list_specimens_keyword_column(conn)
+            kw_rows = await facade.list_specimens_keyword_column(conn)
             assert [r.id for r in kw_rows] == [specimen_id]
             assert kw_rows[0].class_ == "alpha"
 
             # jsonb containment param + the literal-`%` ILIKE branch (title_like=None).
-            search_all = await search.search_specimens(conn, title_like=None, meta_filter={}, label=None)
+            search_all = await facade.search_specimens(conn, title_like=None, meta_filter={}, label=None)
             assert [r.id for r in search_all] == [specimen_id]
-            search_hit = await search.search_specimens(conn, title_like="alp%", meta_filter={}, label="specimen")
+            search_hit = await facade.search_specimens(
+                conn, title_like="alp%", meta_filter={}, label="specimen"
+            )
             assert [r.id for r in search_hit] == [specimen_id]
             assert isinstance(search_hit[0].meta, dict)
 
             # RowsAffected helper returns the count.
-            affected = await bump.bump_specimen_revision(conn, id=specimen_id)
+            affected = await facade.bump_specimen_revision(conn, id=specimen_id)
             assert affected == 1
-            bumped = await get.get_specimen(conn, id=specimen_id)
+            bumped = await facade.get_specimen(conn, id=specimen_id)
             assert bumped is not None
             assert bumped.rev == 2
         finally:
@@ -449,14 +437,14 @@ def test_roundtrip_type_mappings(full_package: Path, roundtrip_db: str) -> None:
     asyncio.run(scenario())
 
 
-def test_require_array_rejects_unregistered_enum_array(full_package: Path) -> None:
+def test_require_array_rejects_unregistered_enum_array(client_modules) -> None:  # noqa: ANN001
     """require_array turns the unregistered enum-array form into a clear error.
 
     Without register_types psycopg returns an enum array as the raw array text, not
     a list; the generated enum-array decode wraps the value in require_array so it
     fails loudly instead of iterating a string into bogus members.
     """
-    import_module = _import_client(full_package)
+    _, _, import_module = client_modules
     runtime = import_module("specimen_client._generated._runtime")
 
     assert runtime.require_array(["happy", "sad"]) == ["happy", "sad"]
@@ -464,32 +452,18 @@ def test_require_array_rejects_unregistered_enum_array(full_package: Path) -> No
         _ = runtime.require_array("{happy,sad}")
 
 
-def test_roundtrip_sync_surface(full_package_sync: Path, roundtrip_db: str) -> None:
-    """The sync surface, generated independently with config.sync = true.
-
-    Drives the generated sync functions (psycopg.Connection, no await) end
-    to end, at the same unified paths the async surface uses (no `.sync.`
-    sub-path) — this package was generated standalone, not alongside async.
-    """
+def test_roundtrip_sync_surface(client_modules, roundtrip_db: str) -> None:  # noqa: ANN001
+    """Drive the additive sync public facade end to end."""
     _apply_migrations(roundtrip_db)
-    import_module = _import_client_sync(full_package_sync)
-
-    register = import_module("specimen_sync_client._generated._register")
-    mood_mod = import_module("specimen_sync_client._generated.types.mood")
-    point_mod = import_module("specimen_sync_client._generated.types.point_2_d")
-    insert = import_module("specimen_sync_client._generated.statements.insert_specimen")
-    get = import_module("specimen_sync_client._generated.statements.get_specimen")
-    by_moods = import_module("specimen_sync_client._generated.statements.list_specimens_by_moods")
-    bump = import_module("specimen_sync_client._generated.statements.bump_specimen_revision")
-
-    Mood = mood_mod.Mood
-    Point2D = point_mod.Point2D
+    _, facade, _ = client_modules
+    Mood = facade.Mood
+    Point2D = facade.Point2D
 
     conn = psycopg.connect(roundtrip_db, autocommit=True)
     try:
-        register.register_types(conn)
+        facade.register_types(conn)
 
-        inserted = insert.insert_specimen(
+        inserted = facade.insert_specimen(
             conn,
             doc_jsonb={"k": "v", "n": 1},
             feeling=Mood.HAPPY,
@@ -517,6 +491,7 @@ def test_roundtrip_sync_surface(full_package_sync: Path, roundtrip_db: str) -> N
             grid=None,
             moods=[Mood.HAPPY, None, Mood.SAD],
         )
+        assert type(inserted) is facade.InsertSpecimenRow
         assert isinstance(inserted.feeling, Mood)
         assert inserted.feeling is Mood.HAPPY
         assert isinstance(inserted.origin, Point2D)
@@ -526,25 +501,25 @@ def test_roundtrip_sync_surface(full_package_sync: Path, roundtrip_db: str) -> N
         assert inserted.moods[0] is Mood.HAPPY
 
         specimen_id = inserted.id
-        hit = get.get_specimen(conn, id=specimen_id)
+        hit = facade.get_specimen(conn, id=specimen_id)
         assert hit is not None
         assert hit.id == specimen_id
-        assert get.get_specimen(conn, id=specimen_id + 10_000) is None
+        assert facade.get_specimen(conn, id=specimen_id + 10_000) is None
 
-        mood_rows = by_moods.list_specimens_by_moods(conn, moods=[Mood.HAPPY])
+        mood_rows = facade.list_specimens_by_moods(conn, moods=[Mood.HAPPY])
         assert [r.id for r in mood_rows] == [specimen_id]
-        assert by_moods.list_specimens_by_moods(conn, moods=[Mood.SAD]) == []
+        assert facade.list_specimens_by_moods(conn, moods=[Mood.SAD]) == []
 
-        affected = bump.bump_specimen_revision(conn, id=specimen_id)
+        affected = facade.bump_specimen_revision(conn, id=specimen_id)
         assert affected == 1
-        bumped = get.get_specimen(conn, id=specimen_id)
+        bumped = facade.get_specimen(conn, id=specimen_id)
         assert bumped is not None
         assert bumped.rev == 2
     finally:
         conn.close()
 
 
-def test_roundtrip_single_field_composite(full_package: Path, roundtrip_db: str) -> None:
+def test_roundtrip_single_field_composite(client_modules, roundtrip_db: str) -> None:  # noqa: ANN001
     """Regression test for compositeBind on a one-field composite.
 
     concatMapSep joins a single-element field list with no separator, so an
@@ -554,56 +529,46 @@ def test_roundtrip_single_field_composite(full_package: Path, roundtrip_db: str)
     decode (RETURNING and a plain SELECT).
     """
     _apply_migrations(roundtrip_db)
-    import_module = _import_client(full_package)
-
-    register = import_module("specimen_client._generated._register")
-    tag_mod = import_module("specimen_client._generated.types.tag_value")
-    insert = import_module("specimen_client._generated.statements.insert_tagged_item")
-    get = import_module("specimen_client._generated.statements.get_tagged_item")
-
-    TagValue = tag_mod.TagValue
+    facade, _, _ = client_modules
+    TagValue = facade.TagValue
 
     async def scenario() -> None:
         conn = await psycopg.AsyncConnection.connect(roundtrip_db, autocommit=True)
         try:
-            await register.register_types(conn)
+            await facade.register_types(conn)
 
-            inserted = await insert.insert_tagged_item(conn, name="widget", tag=TagValue(value="blue"))
+            inserted = await facade.insert_tagged_item(conn, name="widget", tag=TagValue(value="blue"))
+            assert type(inserted) is facade.InsertTaggedItemRow
             assert isinstance(inserted.tag, TagValue)
             assert inserted.tag == TagValue(value="blue")
 
-            hit = await get.get_tagged_item(conn, id=inserted.id)
+            hit = await facade.get_tagged_item(conn, id=inserted.id)
             assert hit is not None
             assert isinstance(hit.tag, TagValue)
             assert hit.tag == TagValue(value="blue")
-            assert await get.get_tagged_item(conn, id=inserted.id + 10_000) is None
+            assert await facade.get_tagged_item(conn, id=inserted.id + 10_000) is None
         finally:
             await conn.close()
 
     asyncio.run(scenario())
 
 
-def test_roundtrip_single_field_composite_sync(full_package_sync: Path, roundtrip_db: str) -> None:
-    """Sync-surface counterpart of test_roundtrip_single_field_composite."""
+def test_roundtrip_single_field_composite_sync(client_modules, roundtrip_db: str) -> None:  # noqa: ANN001
+    """Sync public-facade counterpart of the one-field composite regression."""
     _apply_migrations(roundtrip_db)
-    import_module = _import_client_sync(full_package_sync)
-
-    register = import_module("specimen_sync_client._generated._register")
-    tag_mod = import_module("specimen_sync_client._generated.types.tag_value")
-    insert = import_module("specimen_sync_client._generated.statements.insert_tagged_item")
-    get = import_module("specimen_sync_client._generated.statements.get_tagged_item")
-
-    TagValue = tag_mod.TagValue
+    _, facade, _ = client_modules
+    TagValue = facade.TagValue
 
     conn = psycopg.connect(roundtrip_db, autocommit=True)
     try:
-        register.register_types(conn)
+        facade.register_types(conn)
 
-        inserted = insert.insert_tagged_item(conn, name="widget", tag=TagValue(value="blue"))
+        inserted = facade.insert_tagged_item(conn, name="widget", tag=TagValue(value="blue"))
+        assert type(inserted) is facade.InsertTaggedItemRow
         assert isinstance(inserted.tag, TagValue)
         assert inserted.tag == TagValue(value="blue")
 
-        hit = get.get_tagged_item(conn, id=inserted.id)
+        hit = facade.get_tagged_item(conn, id=inserted.id)
         assert hit is not None
         assert hit.tag == TagValue(value="blue")
     finally:

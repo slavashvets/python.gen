@@ -4,9 +4,10 @@
 
 from __future__ import annotations
 
-from psycopg import AsyncConnection
+from psycopg import AsyncConnection, Connection
 
 from .._runtime import execute_rows_affected as _execute_rows_affected
+from ..sync._runtime import execute_rows_affected as _execute_rows_affected_sync
 
 SQL = """\
 -- rows_affected: UPDATE without RETURNING, keyed by id; exercises the rowcount
@@ -28,3 +29,14 @@ async def bump_specimen_revision(
         "id": id,
     }
     return await _execute_rows_affected(conn, _SQL, params)
+
+
+def bump_specimen_revision_sync(
+    conn: Connection[object],
+    *,
+    id: int | None,
+) -> int:
+    params: dict[str, object] = {
+        "id": id,
+    }
+    return _execute_rows_affected_sync(conn, _SQL, params)

@@ -11,10 +11,11 @@ from decimal import Decimal
 from typing import cast as _cast
 from uuid import UUID
 
-from psycopg import AsyncConnection
+from psycopg import AsyncConnection, Connection
 
 from .._core import JsonValue
 from .._runtime import fetch_optional as _fetch_optional
+from ..sync._runtime import fetch_optional as _fetch_optional_sync
 from ..types.mood import Mood
 from ..types.point_2_d import Point2D
 
@@ -116,3 +117,14 @@ async def get_specimen(
         "id": id,
     }
     return await _fetch_optional(conn, _SQL, params, _decode_row)
+
+
+def get_specimen_sync(
+    conn: Connection[object],
+    *,
+    id: int | None,
+) -> GetSpecimenRow | None:
+    params: dict[str, object] = {
+        "id": id,
+    }
+    return _fetch_optional_sync(conn, _SQL, params, _decode_row)

@@ -17,7 +17,7 @@ let Value = ./Value.dhall
 let Config =
       { packageName : Text
       , importName : Text
-      , sync : Bool
+      , emitSync : Bool
       , onUnsupported : OnUnsupported.Mode
       }
 

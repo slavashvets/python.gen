@@ -8,11 +8,12 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import cast as _cast
 
-from psycopg import AsyncConnection
+from psycopg import AsyncConnection, Connection
 from psycopg.types.json import Jsonb
 
 from .._core import JsonValue
 from .._runtime import fetch_many as _fetch_many
+from ..sync._runtime import fetch_many as _fetch_many_sync
 
 
 @dataclass(frozen=True, slots=True)
@@ -62,3 +63,18 @@ async def search_specimens(
         "label": label,
     }
     return await _fetch_many(conn, _SQL, params, _decode_row)
+
+
+def search_specimens_sync(
+    conn: Connection[object],
+    *,
+    title_like: str | None,
+    meta_filter: JsonValue | None,
+    label: str | None,
+) -> list[SearchSpecimensRow]:
+    params: dict[str, object] = {
+        "title_like": title_like,
+        "meta_filter": None if meta_filter is None else Jsonb(meta_filter),
+        "label": label,
+    }
+    return _fetch_many_sync(conn, _SQL, params, _decode_row)

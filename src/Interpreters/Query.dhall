@@ -25,7 +25,7 @@ let StatementModule = ../Templates/StatementModule.dhall
 let Config =
       { packageName : Text
       , importName : Text
-      , sync : Bool
+      , emitSync : Bool
       , onUnsupported : OnUnsupported.Mode
       }
 
@@ -33,9 +33,9 @@ let Compiled = Lude.Compiled
 
 let Input = Model.Query
 
--- A query renders to one thin statement module: its own Row dataclass and
--- decode function (when it returns rows) plus the I/O wrapper for whichever
--- surface config.sync picked. rowClassName is still surfaced here (not just
+-- A query renders to one statement module: its own Row dataclass and decode
+-- function (when it returns rows), the async function, and optional adjacent
+-- sync function. rowClassName is still surfaced here (not just
 -- internal to the rendered content) because Project.dhall's facade needs the
 -- name to build the re-export line; the Row's full definition does not
 -- leave this module.
@@ -107,8 +107,6 @@ let render =
         -- consumers (the statement module and, formerly, _rows.py).
         let mergedImports = ImportSet.combine paramImports result.imports
 
-        let surface = if config.sync then Surface.sync else Surface.async
-
         let content =
               StatementModule.run
                 { functionName
@@ -120,7 +118,9 @@ let render =
                 , paramSigLines
                 , paramDictEntries
                 , imports = mergedImports
-                , surface
+                , emitSync = config.emitSync
+                , asyncSurface = Surface.async
+                , syncSurface = Surface.sync
                 }
 
         in  { functionName

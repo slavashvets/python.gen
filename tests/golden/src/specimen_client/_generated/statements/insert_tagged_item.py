@@ -8,9 +8,10 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import cast as _cast
 
-from psycopg import AsyncConnection
+from psycopg import AsyncConnection, Connection
 
 from .._runtime import fetch_single as _fetch_single
+from ..sync._runtime import fetch_single as _fetch_single_sync
 from ..types.tag_value import TagValue
 
 
@@ -51,3 +52,16 @@ async def insert_tagged_item(
         "tag": tag.pg_encode(),
     }
     return await _fetch_single(conn, _SQL, params, _decode_row)
+
+
+def insert_tagged_item_sync(
+    conn: Connection[object],
+    *,
+    name: str,
+    tag: TagValue,
+) -> InsertTaggedItemRow:
+    params: dict[str, object] = {
+        "name": name,
+        "tag": tag.pg_encode(),
+    }
+    return _fetch_single_sync(conn, _SQL, params, _decode_row)

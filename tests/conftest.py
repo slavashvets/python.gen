@@ -16,7 +16,6 @@ import pytest
 from tests._harness import (
     FIXTURE_PROJECT,
     GOLDEN_DIR,
-    GOLDEN_DIR_SYNC,
     HERE,
     SRC_DIR,
     admin_database_url,
@@ -103,36 +102,18 @@ def full_package(generated_tree: Path, tmp_path_factory: pytest.TempPathFactory)
     root = tmp_path_factory.mktemp("pkg")
     shell_src = GOLDEN_DIR / "src"
     generated_src = generated_tree / "src"
-    _ = shutil.copytree(shell_src, root / "src", ignore=shutil.ignore_patterns("_generated", "__init__.py"))
-    for pkg_dir in generated_src.iterdir():
-        dest_pkg = root / "src" / pkg_dir.name
-        _ = shutil.copytree(pkg_dir / "_generated", dest_pkg / "_generated")
-        _ = shutil.copy2(pkg_dir / "__init__.py", dest_pkg / "__init__.py")
-        # The sync facade (sync/__init__.py) lives outside _generated, like the
-        # async facade; overlay it too when the project emits a sync surface.
-        sync_facade = pkg_dir / "sync" / "__init__.py"
-        if sync_facade.exists():
-            (dest_pkg / "sync").mkdir(parents=True, exist_ok=True)
-            _ = shutil.copy2(sync_facade, dest_pkg / "sync" / "__init__.py")
-    return root
+    packages = [path for path in generated_src.iterdir() if path.is_dir()]
+    assert len(packages) == 1, f"expected exactly one generated package, found {packages}"
+    pkg_dir = packages[0]
+    assert pkg_dir.name == "specimen_client"
 
-
-@pytest.fixture(scope="session")
-def full_package_sync(generated_tree: Path, tmp_path_factory: pytest.TempPathFactory) -> Path:
-    """The sync-surface counterpart of `full_package`.
-
-    `generated_tree` already ran `pgn generate` against the full project
-    (all artifacts, including `python-sync`), so this reuses that one
-    subprocess call rather than invoking pgn again: it just points at the
-    sibling `python_sync` artifact directory instead of `python`.
-    """
-    generated_tree_sync = generated_tree.parent.parent / "artifacts" / "python_sync"
-    root = tmp_path_factory.mktemp("pkg-sync")
-    shell_src = GOLDEN_DIR_SYNC / "src"
-    generated_src = generated_tree_sync / "src"
-    _ = shutil.copytree(shell_src, root / "src", ignore=shutil.ignore_patterns("_generated", "__init__.py"))
-    for pkg_dir in generated_src.iterdir():
-        dest_pkg = root / "src" / pkg_dir.name
-        _ = shutil.copytree(pkg_dir / "_generated", dest_pkg / "_generated")
-        _ = shutil.copy2(pkg_dir / "__init__.py", dest_pkg / "__init__.py")
+    _ = shutil.copytree(
+        shell_src,
+        root / "src",
+        ignore=shutil.ignore_patterns("_generated", "__init__.py", "sync"),
+    )
+    dest_pkg = root / "src" / pkg_dir.name
+    _ = shutil.copytree(pkg_dir / "_generated", dest_pkg / "_generated")
+    _ = shutil.copy2(pkg_dir / "__init__.py", dest_pkg / "__init__.py")
+    _ = shutil.copytree(pkg_dir / "sync", dest_pkg / "sync")
     return root

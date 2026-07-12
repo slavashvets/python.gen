@@ -10,16 +10,13 @@ let StatementExport =
 -- A custom type re-exported from types/: the leaf module name plus the class.
 let TypeExport = { moduleName : Text, className : Text }
 
--- The facade always lives at the package root, importing from `_generated`
--- (prefix `._generated`) and `_generated/statements` (statementsPath
--- `statements`) — both constant now that exactly one surface is emitted per
--- generate (Interpreters/Project.dhall picks it via config.sync).
-let generatedPrefix = "._generated"
-let statementsPath = "statements"
-
 let Params =
       { statements : List StatementExport
       , types : List TypeExport
+      , generatedPrefix : Text
+      , functionSuffix : Text
+      , registrationSource : Optional Text
+      , includeSyncModule : Bool
       }
 
 -- "x as x" re-export markers (PEP 484) so basedpyright strict and ruff treat the
@@ -47,7 +44,7 @@ let runtimeNames = [ "JsonValue", "NoRowError" ]
 let run =
       \(params : Params) ->
         let runtimeBlock =
-              "from ${generatedPrefix}._core import "
+              "from ${params.generatedPrefix}._core import "
               ++  Prelude.Text.concatMapSep
                     ", "
                     Text
@@ -59,7 +56,7 @@ let run =
                 "\n"
                 TypeExport
                 ( \(t : TypeExport) ->
-                    "from ${generatedPrefix}.types.${t.moduleName} import ${alias t.className}"
+                    "from ${params.generatedPrefix}.types.${t.moduleName} import ${alias t.className}"
                 )
                 params.types
 
@@ -81,11 +78,27 @@ let run =
                             { None = "", Some = \(row : Text) -> ", ${alias row}" }
                             s.rowClassName
 
-                    in      "from ${generatedPrefix}.${statementsPath}.${s.functionName} import "
-                        ++  alias s.functionName
+                    in      "from ${params.generatedPrefix}.statements.${s.functionName} import "
+                        ++  s.functionName
+                        ++  params.functionSuffix
+                        ++  " as "
+                        ++  s.functionName
                         ++  rowSuffix
                 )
                 params.statements
+
+        let registrationBlock =
+              merge
+                { None = [] : List Text
+                , Some =
+                    \(source : Text) ->
+                      [ "from ${params.generatedPrefix}._register import ${source} as register_types"
+                      ]
+                }
+                params.registrationSource
+
+        let syncBlock =
+              if params.includeSyncModule then [ "from . import sync as sync" ] else [] : List Text
 
         let importGroups =
                   [ runtimeBlock ]
@@ -97,6 +110,8 @@ let run =
                     then  [] : List Text
                     else  [ statementBlock ]
                   )
+                # registrationBlock
+                # syncBlock
 
         let importSection = Prelude.Text.concatSep "\n\n" importGroups
 
@@ -113,6 +128,13 @@ let run =
                     Text
                     (\(s : StatementExport) -> s.functionName)
                     params.statements
+                # ( merge
+                      { None = [] : List Text
+                      , Some = \(_ : Text) -> [ "register_types" ]
+                      }
+                      params.registrationSource
+                  )
+                # (if params.includeSyncModule then [ "sync" ] else [] : List Text)
 
         let allEntries =
               Prelude.Text.concatMap

@@ -2,9 +2,7 @@ let Prelude = ../Deps/Prelude.dhall
 
 let Sdk = ../Deps/Sdk.dhall
 
-let Surface = ../Structures/Surface.dhall
-
--- Per-connection type registration, emitted once per surface. psycopg decodes an
+-- Per-connection type registration, emitted once. psycopg decodes an
 -- unregistered composite as a text string; registering its CompositeInfo makes
 -- it decode to a namedtuple, which the generated decode then splats into the
 -- frozen dataclass. An enum scalar already decodes as text, but an enum ARRAY
@@ -15,7 +13,7 @@ let Surface = ../Structures/Surface.dhall
 let Params =
       { compositeNames : List Text
       , enumNames : List Text
-      , surface : Surface.Type
+      , emitSync : Bool
       }
 
 let tupleLiteral =
@@ -44,8 +42,6 @@ let enumLoop =
 
 let run =
       \(params : Params) ->
-        let surface = params.surface
-
         let hasComposites =
               Prelude.Bool.not (Prelude.List.null Text params.compositeNames)
 
@@ -54,7 +50,9 @@ let run =
         let importLines =
                 [ "from __future__ import annotations"
                 , ""
-                , "from psycopg import ${surface.connType}"
+                , if    params.emitSync
+                  then  "from psycopg import AsyncConnection, Connection"
+                  else  "from psycopg import AsyncConnection"
                 ]
               # ( if    hasEnums
                   then  [ "from psycopg.types import TypeInfo" ]
@@ -76,21 +74,37 @@ let run =
                   else  [] : List Text
                 )
 
-        let bodyLines =
+        let asyncBodyLines =
                 ( if    hasComposites
-                  then  compositeLoop surface.awaitKw
+                  then  compositeLoop "await "
                   else  [] : List Text
                 )
-              # (if hasEnums then enumLoop surface.awaitKw else [] : List Text)
+              # (if hasEnums then enumLoop "await " else [] : List Text)
+
+        let syncBodyLines =
+                ( if    hasComposites
+                  then  compositeLoop ""
+                  else  [] : List Text
+                )
+              # (if hasEnums then enumLoop "" else [] : List Text)
+
+        let syncFunction =
+              if    params.emitSync
+              then    [ "", "" ]
+                    # [ "def register_types_sync(conn: Connection[object]) -> None:"
+                      ]
+                    # syncBodyLines
+              else  [] : List Text
 
         let allLines =
                 importLines
               # [ "", "" ]
               # constantLines
               # [ "", "" ]
-              # [ "${surface.defKeyword} register_types(conn: ${surface.connType}[object]) -> None:"
+              # [ "async def register_types(conn: AsyncConnection[object]) -> None:"
                 ]
-              # bodyLines
+              # asyncBodyLines
+              # syncFunction
 
         in  Prelude.Text.concatSep "\n" allLines ++ "\n"
 

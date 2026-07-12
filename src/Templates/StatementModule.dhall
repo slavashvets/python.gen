@@ -68,9 +68,8 @@ let hasRow
     = \(rowDef : Optional RowDef) ->
         merge { None = False, Some = \(_ : RowDef) -> True } rowDef
 
--- A statement module is the thin per-surface I/O wrapper: it renders its own
--- Row dataclass and decode function (when the query returns rows) and one
--- `async def`/`def` over a connection. `imports` carries BOTH the parameter
+-- A canonical statement module owns its Row, decoder, SQL, async function, and
+-- optional adjacent sync function. `imports` carries both the parameter
 -- type imports and the result-column imports merged into one set
 -- (Interpreters/Query.dhall combines them), since both now live in this one
 -- file.
@@ -84,7 +83,9 @@ let Params =
       , paramSigLines : List Text
       , paramDictEntries : List Text
       , imports : ImportSet.Type
-      , surface : Surface.Type
+      , emitSync : Bool
+      , asyncSurface : Surface.Type
+      , syncSurface : Surface.Type
       }
 
 let importLineIf
@@ -105,13 +106,11 @@ let datetimeImport
             then  [ "from datetime import " ++ Prelude.Text.concatSep ", " names ]
             else  [] : List Text
 
--- The I/O helper (fetch_*/execute_*) always comes from _runtime; JsonValue, when
--- used, comes from _core via the surface's corePrefix (statement modules import
--- the shared name directly, not through the _runtime re-export).
 let runtimeImport
-    : Text -> Text
-    = \(helperName : Text) ->
-        "from .._runtime import ${helperName} as _${helperName}"
+    : Surface.Type -> Text -> Text
+    = \(surface : Surface.Type) ->
+      \(helperName : Text) ->
+        "from ${surface.runtimePrefix} import ${helperName} as _${helperName}${surface.helperSuffix}"
 
 let coreImport
     : Text -> Bool -> List Text
@@ -140,6 +139,10 @@ let renderImports
 
         let rowIsPresent = hasRow params.rowDef
 
+        let asyncSurface = params.asyncSurface
+
+        let syncSurface = params.syncSurface
+
         let stdlibBlock =
                   importLineIf rowIsPresent "from collections.abc import Mapping"
                 # importLineIf rowIsPresent "from dataclasses import dataclass"
@@ -148,8 +151,12 @@ let renderImports
                 # importLineIf imports.needsCast "from typing import cast as _cast"
                 # importLineIf imports.uuid "from uuid import UUID"
 
+        let connectionNames =
+                  [ asyncSurface.connType ]
+                # (if params.emitSync then [ syncSurface.connType ] else [] : List Text)
+
         let psycopgBlock =
-                  [ "from psycopg import ${params.surface.connType}" ]
+                  [ "from psycopg import " ++ Prelude.Text.concatSep ", " connectionNames ]
                 # importLineIf
                     imports.json
                     "from psycopg.types.json import Json"
@@ -158,12 +165,16 @@ let renderImports
                     "from psycopg.types.json import Jsonb"
 
         let localBlock =
-                  coreImport params.surface.corePrefix imports.jsonValue
+                  coreImport asyncSurface.corePrefix imports.jsonValue
                 # importLineIf
                     imports.enumArray
-                    "from ${params.surface.corePrefix} import require_array as _require_array"
-                # [ runtimeImport params.helperName ]
-                # customImportLines params.surface.typesPrefix imports
+                    "from ${asyncSurface.corePrefix} import require_array as _require_array"
+                # [ runtimeImport asyncSurface params.helperName ]
+                # ( if    params.emitSync
+                    then  [ runtimeImport syncSurface params.helperName ]
+                    else  [] : List Text
+                  )
+                # customImportLines asyncSurface.typesPrefix imports
 
         let groups =
               [ [ "from __future__ import annotations" ]
@@ -187,8 +198,9 @@ let renderImports
               nonEmptyGroups
 
 let renderSignature
-    : Params -> Text
+    : Params -> Surface.Type -> Text
     = \(params : Params) ->
+      \(surface : Surface.Type) ->
         let hasParams =
               Prelude.Bool.not (Prelude.List.null Text params.paramSigLines)
 
@@ -200,11 +212,12 @@ let renderSignature
                 (\(line : Text) -> "    " ++ line ++ ",\n")
                 params.paramSigLines
 
-        in      params.surface.defKeyword
+        in      surface.defKeyword
             ++  " "
             ++  params.functionName
+            ++  surface.functionSuffix
             ++  "(\n"
-            ++  "    conn: ${params.surface.connType}[object],\n"
+            ++  "    conn: ${surface.connType}[object],\n"
             ++  kwMarker
             ++  paramBlock
             ++  ") -> "
@@ -226,13 +239,26 @@ let renderParamsDict
               ++  "}"
 
 let renderCall
-    : Params -> Text
+    : Params -> Surface.Type -> Text
     = \(params : Params) ->
-        let await = params.surface.awaitKw
+      \(surface : Surface.Type) ->
+        let await = surface.awaitKw
+
+        let helper = "_" ++ params.helperName ++ surface.helperSuffix
 
         in  if    params.callsDecode
-            then  "return ${await}_${params.helperName}(conn, _SQL, params, _decode_row)"
-            else  "return ${await}_${params.helperName}(conn, _SQL, params)"
+            then  "return ${await}${helper}(conn, _SQL, params, _decode_row)"
+            else  "return ${await}${helper}(conn, _SQL, params)"
+
+let renderFunction
+    : Params -> Surface.Type -> Text
+    = \(params : Params) ->
+      \(surface : Surface.Type) ->
+            renderSignature params surface
+        ++  "\n"
+        ++  indentAll 4 (renderParamsDict params)
+        ++  "\n"
+        ++  indentAll 4 (renderCall params surface)
 
 in  Sdk.Sigs.template
       Params
@@ -250,11 +276,11 @@ in  Sdk.Sigs.template
           -- per-query str->bytes allocation (psycopg auto-prepare keys on the
           -- bytes value, so equal bytes still hit the prepared-statement cache).
           ++  "\n\"\"\"\n\n_SQL = SQL.encode()\n\n\n"
-          ++  renderSignature params
-          ++  "\n"
-          ++  indentAll 4 (renderParamsDict params)
-          ++  "\n"
-          ++  indentAll 4 (renderCall params)
+          ++  renderFunction params params.asyncSurface
+          ++  ( if    params.emitSync
+                then  "\n\n\n" ++ renderFunction params params.syncSurface
+                else  ""
+              )
           ++  "\n"
       )
     /\ { RowDef }

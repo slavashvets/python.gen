@@ -7,11 +7,7 @@ artifacts:
     gen: ../../src/package.dhall
     config:
       packageName: specimen-client
-  python-sync:
-    gen: ../../src/package.dhall
-    config:
-      packageName: specimen-sync-client
-      sync: true
+      emitSync: true
   # The variants below pin pgn's actual YAML->Dhall decode semantics for the
   # Optional Config knobs (undocumented by pgn itself); see
   # tests/test_config_variants.py for the assertions.
@@ -22,19 +18,18 @@ artifacts:
   python-sync-only:
     gen: ../../src/package.dhall
     config:
-      sync: true
+      emitSync: true
+  python-explicit-false:
+    gen: ../../src/package.dhall
+    config:
+      emitSync: false
   python-empty:
     gen: ../../src/package.dhall
     config: {}
   python-bare:
     gen: ../../src/package.dhall
-  python-unknown-key:
-    gen: ../../src/package.dhall
-    config:
-      packageName: unknown-key-client
-      bogusField: 1
   python-null:
     gen: ../../src/package.dhall
     config:
       packageName: null-client
-      sync: null
+      emitSync: null

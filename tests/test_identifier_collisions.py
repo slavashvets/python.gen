@@ -53,6 +53,7 @@ def _fresh_project(tmp_path: Path) -> tuple[Path, Path, str, str]:
         "    gen: ../../src/package.dhall\n"
         "    config:\n"
         f"      packageName: {package_name}\n"
+        "      emitSync: true\n"
     )
 
     queries = {
@@ -100,6 +101,12 @@ let run =
                   ++  "\n"
                   ++  PyIdent.querySafeName "_decode_row"
                   ++  "\n"
+                  ++  PyIdent.querySafeName "_fetch_many_sync"
+                  ++  "\n"
+                  ++  PyIdent.querySafeName "sync"
+                  ++  "\n"
+                  ++  PyIdent.querySafeName "register_types"
+                  ++  "\n"
               }
             ] : Lude.Files.Type
           )
@@ -127,7 +134,13 @@ in  Sdk.Sigs.generator Config Config/default run
     result = run_pgn(pgn_bin, pgn_admin_url, canary, "generate")
     assert result.returncode == 0, f"query-name canary generation failed:\n{result.stdout}\n{result.stderr}"
     output = canary / "artifacts" / "python" / "query-safe-name.txt"
-    assert output.read_text().splitlines() == ["_types_query", "_decode_row_query"]
+    assert output.read_text().splitlines() == [
+        "_types_query",
+        "_decode_row_query",
+        "_fetch_many_sync_query",
+        "sync_query",
+        "register_types_query",
+    ]
 
 
 @contextmanager
@@ -169,19 +182,20 @@ def _clear_package_modules(import_name: str) -> None:
             del sys.modules[name]
 
 
-def _facade_statement_exports(facade: Path) -> dict[str, str]:
+def _facade_statement_exports(facade: Path, *, level: int, function_suffix: str) -> dict[str, str]:
     exports: dict[str, str] = {}
     tree = ast.parse(facade.read_text())
     for node in tree.body:
         if not isinstance(node, ast.ImportFrom) or node.module is None:
             continue
         prefix = "_generated.statements."
-        if node.level != 1 or not node.module.startswith(prefix):
+        if node.level != level or not node.module.startswith(prefix):
             continue
         module_name = node.module.removeprefix(prefix)
         query_import = node.names[0]
-        assert query_import.asname == query_import.name
-        exports[module_name] = query_import.name
+        assert query_import.name == f"{module_name}{function_suffix}"
+        assert query_import.asname == module_name
+        exports[module_name] = query_import.asname
     return exports
 
 
@@ -192,17 +206,30 @@ def _assert_statement_structure(statements: Path) -> None:
     for function_name, helper in HELPERS.items():
         source = (statements / f"{function_name}.py").read_text()
         tree = ast.parse(source)
-        runtime_imports = [
+        async_runtime_imports = [
             node
             for node in tree.body
             if isinstance(node, ast.ImportFrom) and node.level == 2 and node.module == "_runtime"
         ]
-        assert len(runtime_imports) == 1
-        assert [(alias.name, alias.asname) for alias in runtime_imports[0].names] == [
+        assert len(async_runtime_imports) == 1
+        assert [(alias.name, alias.asname) for alias in async_runtime_imports[0].names] == [
             (helper, f"_{helper}")
         ]
+        sync_runtime_imports = [
+            node
+            for node in tree.body
+            if isinstance(node, ast.ImportFrom) and node.level == 2 and node.module == "sync._runtime"
+        ]
+        assert len(sync_runtime_imports) == 1
+        assert [(alias.name, alias.asname) for alias in sync_runtime_imports[0].names] == [
+            (helper, f"_{helper}_sync")
+        ]
         assert f"from .._runtime import {helper} as _{helper}" in source
+        assert f"from ..sync._runtime import {helper} as _{helper}_sync" in source
         assert f"return await _{helper}(conn, _SQL, params, _decode_row)" in source
+        assert f"return _{helper}_sync(conn, _SQL, params, _decode_row)" in source
+        assert f"async def {function_name}(" in source
+        assert f"def {function_name}_sync(" in source
         assert source.count("def _decode_row(") == 1
         assert "def decode_" not in source
 
@@ -270,19 +297,27 @@ def test_identifier_collisions_roundtrip(
     statements = package_src / "_generated" / "statements"
     assert package_src.is_dir(), f"pgn did not generate package {package_name!r}"
     _assert_statement_structure(statements)
-    facade_exports = _facade_statement_exports(package_src / "__init__.py")
-    assert facade_exports == {name: name for name in EXPECTED_FUNCTIONS}
+    facade_exports = _facade_statement_exports(
+        package_src / "__init__.py", level=1, function_suffix=""
+    )
+    sync_exports = _facade_statement_exports(
+        package_src / "sync" / "__init__.py", level=2, function_suffix="_sync"
+    )
+    expected_exports = {name: name for name in EXPECTED_FUNCTIONS}
+    assert facade_exports == expected_exports
+    assert sync_exports == expected_exports
     assert not (statements / "date.py").exists()
     assert not (statements / "_types.py").exists()
+    assert not (package_src / "_generated" / "sync" / "statements").exists()
+    assert not (package_src / "_generated" / "sync" / "_register.py").exists()
     _assert_strict(package_src, tmp_path)
 
     sys.path.insert(0, str(generated_src))
     _clear_package_modules(import_name)
     try:
         facade = importlib.import_module(import_name)
-        register = importlib.import_module(f"{import_name}._generated._register")
-        mood_module = importlib.import_module(f"{import_name}._generated.types.mood")
-        Mood = mood_module.Mood
+        sync_facade = importlib.import_module(f"{import_name}.sync")
+        Mood = facade.Mood
 
         with _scratch_database(pgn_admin_url) as db_url:
             _apply_migrations(project, db_url)
@@ -290,7 +325,7 @@ def test_identifier_collisions_roundtrip(
             async def scenario() -> None:
                 conn = await psycopg.AsyncConnection.connect(db_url, autocommit=True)
                 try:
-                    await register.register_types(conn)
+                    await facade.register_types(conn)
                     cast_row = await facade.cast(conn)
                     require_array_row = await facade.require_array(conn)
                     many_rows = await facade.fetch_many(conn)
@@ -305,6 +340,19 @@ def test_identifier_collisions_roundtrip(
                     await conn.close()
 
             asyncio.run(scenario())
+
+            with psycopg.connect(db_url, autocommit=True) as conn:
+                sync_facade.register_types(conn)
+                cast_row = sync_facade.cast(conn)
+                require_array_row = sync_facade.require_array(conn)
+                many_rows = sync_facade.fetch_many(conn)
+                date_row = sync_facade.date_query(conn)
+
+                assert cast_row.value == 1
+                assert require_array_row.moods == [Mood.HAPPY]
+                assert require_array_row.moods[0] is Mood.HAPPY
+                assert [row.value for row in many_rows] == [1, 2]
+                assert date_row.value == date(2026, 7, 13)
     finally:
         _clear_package_modules(import_name)
         sys.path.remove(str(generated_src))

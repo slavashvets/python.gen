@@ -8,9 +8,10 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import cast as _cast
 
-from psycopg import AsyncConnection
+from psycopg import AsyncConnection, Connection
 
 from .._runtime import fetch_optional as _fetch_optional
+from ..sync._runtime import fetch_optional as _fetch_optional_sync
 from ..types.tag_value import TagValue
 
 
@@ -51,3 +52,14 @@ async def get_tagged_item(
         "id": id,
     }
     return await _fetch_optional(conn, _SQL, params, _decode_row)
+
+
+def get_tagged_item_sync(
+    conn: Connection[object],
+    *,
+    id: int | None,
+) -> GetTaggedItemRow | None:
+    params: dict[str, object] = {
+        "id": id,
+    }
+    return _fetch_optional_sync(conn, _SQL, params, _decode_row)

@@ -11,13 +11,14 @@ from decimal import Decimal
 from typing import cast as _cast
 from uuid import UUID
 
-from psycopg import AsyncConnection
+from psycopg import AsyncConnection, Connection
 from psycopg.types.json import Json
 from psycopg.types.json import Jsonb
 
 from .._core import JsonValue
 from .._core import require_array as _require_array
 from .._runtime import fetch_single as _fetch_single
+from ..sync._runtime import fetch_single as _fetch_single_sync
 from ..types.mood import Mood
 from ..types.point_2_d import Point2D
 
@@ -190,3 +191,62 @@ async def insert_specimen(
         "origin": None if origin is None else origin.pg_encode(),
     }
     return await _fetch_single(conn, _SQL, params, _decode_row)
+
+
+def insert_specimen_sync(
+    conn: Connection[object],
+    *,
+    flag: bool,
+    small: int,
+    medium: int,
+    large: int,
+    ratio: float,
+    precise: float,
+    title: str,
+    code: str,
+    letter: str,
+    born_on: date,
+    amount: Decimal,
+    blob: bytes,
+    doc_json: JsonValue,
+    doc_jsonb: JsonValue,
+    maybe_text: str | None,
+    maybe_int: int | None,
+    maybe_uuid: UUID | None,
+    maybe_ts: datetime | None,
+    maybe_num: Decimal | None,
+    tags: list[str | None],
+    related_ids: list[UUID | None] | None,
+    grid: list[int | None] | None,
+    feeling: Mood,
+    moods: list[Mood | None] | None,
+    origin: Point2D | None,
+) -> InsertSpecimenRow:
+    params: dict[str, object] = {
+        "flag": flag,
+        "small": small,
+        "medium": medium,
+        "large": large,
+        "ratio": ratio,
+        "precise": precise,
+        "title": title,
+        "code": code,
+        "letter": letter,
+        "born_on": born_on,
+        "amount": amount,
+        "blob": blob,
+        "doc_json": Json(doc_json),
+        "doc_jsonb": Jsonb(doc_jsonb),
+        "maybe_text": maybe_text,
+        "maybe_int": maybe_int,
+        "maybe_uuid": maybe_uuid,
+        "maybe_ts": maybe_ts,
+        "maybe_num": maybe_num,
+        "tags": tags,
+        "related_ids": related_ids,
+        "grid": grid,
+        "feeling": feeling.pg_encode(),
+        "moods": None if moods is None else [None if x is None else x.pg_encode() for x in moods],
+        "origin": None if origin is None else origin.pg_encode(),
+    }
+    return _fetch_single_sync(conn, _SQL, params, _decode_row)

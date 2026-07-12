@@ -20,6 +20,10 @@ from ._generated.statements.list_specimens_by_moods import list_specimens_by_moo
 from ._generated.statements.list_specimens_keyword_column import list_specimens_keyword_column as list_specimens_keyword_column, ListSpecimensKeywordColumnRow as ListSpecimensKeywordColumnRow
 from ._generated.statements.search_specimens import search_specimens as search_specimens, SearchSpecimensRow as SearchSpecimensRow
 
+from ._generated._register import register_types as register_types
+
+from . import sync as sync
+
 __all__ = [
     "JsonValue",
     "NoRowError",
@@ -47,4 +51,6 @@ __all__ = [
     "list_specimens_by_moods",
     "list_specimens_keyword_column",
     "search_specimens",
+    "register_types",
+    "sync",
 ]

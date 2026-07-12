@@ -9,10 +9,11 @@ from dataclasses import dataclass
 from typing import cast as _cast
 from uuid import UUID
 
-from psycopg import AsyncConnection
+from psycopg import AsyncConnection, Connection
 
 from .._core import JsonValue
 from .._runtime import fetch_many as _fetch_many
+from ..sync._runtime import fetch_many as _fetch_many_sync
 from ..types.mood import Mood
 from ..types.point_2_d import Point2D
 
@@ -65,3 +66,14 @@ async def list_specimens_by_feeling(
         "feeling": None if feeling is None else feeling.pg_encode(),
     }
     return await _fetch_many(conn, _SQL, params, _decode_row)
+
+
+def list_specimens_by_feeling_sync(
+    conn: Connection[object],
+    *,
+    feeling: Mood | None,
+) -> list[ListSpecimensByFeelingRow]:
+    params: dict[str, object] = {
+        "feeling": None if feeling is None else feeling.pg_encode(),
+    }
+    return _fetch_many_sync(conn, _SQL, params, _decode_row)

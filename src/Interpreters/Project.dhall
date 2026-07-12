@@ -28,8 +28,6 @@ let RegisterModule = ../Templates/RegisterModule.dhall
 
 let FacadeModule = ../Templates/FacadeModule.dhall
 
-let Surface = ../Structures/Surface.dhall
-
 let OnUnsupported = ../Structures/OnUnsupported.dhall
 
 let Report = { path : List Text, message : Text }
@@ -37,11 +35,11 @@ let Report = { path : List Text, message : Text }
 -- The generator's public Config: every field is independently Optional, so a
 -- project may omit the whole `config:` block or any subset of its keys.
 -- `run` below resolves the fallbacks itself (packageName from the project
--- name, sync off, onUnsupported Fail); there is no separate config type
+-- name, sync emission off, onUnsupported Fail); there is no separate config type
 -- or resolve step between package.dhall and here.
 let Config =
       { packageName : Optional Text
-      , sync : Optional Bool
+      , emitSync : Optional Bool
       , onUnsupported : Optional OnUnsupported.Mode
       }
 
@@ -50,7 +48,7 @@ let Config =
 let ResolvedConfig =
       { packageName : Text
       , importName : Text
-      , sync : Bool
+      , emitSync : Bool
       , onUnsupported : OnUnsupported.Mode
       }
 
@@ -82,7 +80,7 @@ let lookupConfig
     : ResolvedConfig
     = { packageName = ""
       , importName = ""
-      , sync = False
+      , emitSync = False
       , onUnsupported = OnUnsupported.Mode.Fail
       }
 
@@ -225,15 +223,6 @@ let combineOutputs =
                 )
                 customTypes
 
-        let surface = if config.sync then Surface.sync else Surface.async
-
-        let facade =
-              { path = packagePrefix ++ "__init__.py"
-              , content =
-                  FacadeModule.run
-                    { statements = facadeStatements, types = facadeTypes }
-              }
-
         -- Surface-agnostic; performs no I/O, so exactly one copy is emitted
         -- regardless of surface. Both runtime bodies re-export from it.
         let coreModule =
@@ -241,9 +230,16 @@ let combineOutputs =
 
         let runtimeModule =
               { path = srcPrefix ++ "_runtime.py"
-              , content =
-                  if config.sync then RuntimeModule.runSync {=} else RuntimeModule.run {=}
+              , content = RuntimeModule.run {=}
               }
+
+        let syncRuntimeFiles =
+              if    config.emitSync
+              then  [ { path = srcPrefix ++ "sync/_runtime.py"
+                      , content = RuntimeModule.runSync {=}
+                      }
+                    ]
+              else  [] : List Lude.File.Type
 
         let statementsInit =
               { path = srcPrefix ++ "statements/__init__.py"
@@ -304,13 +300,56 @@ let combineOutputs =
               if    hasCustomRegistration
               then  [ { path = srcPrefix ++ "_register.py"
                       , content =
-                          RegisterModule.run { compositeNames, enumNames, surface }
+                          RegisterModule.run
+                            { compositeNames
+                            , enumNames
+                            , emitSync = config.emitSync
+                            }
+                      }
+                    ]
+              else  [] : List Lude.File.Type
+
+        let registrationSource =
+              if    hasCustomRegistration
+              then  Some "register_types"
+              else  None Text
+
+        let facade =
+              { path = packagePrefix ++ "__init__.py"
+              , content =
+                  FacadeModule.run
+                    { statements = facadeStatements
+                    , types = facadeTypes
+                    , generatedPrefix = "._generated"
+                    , functionSuffix = ""
+                    , registrationSource
+                    , includeSyncModule = config.emitSync
+                    }
+              }
+
+        let syncFacadeFiles =
+              if    config.emitSync
+              then  [ { path = packagePrefix ++ "sync/__init__.py"
+                      , content =
+                          FacadeModule.run
+                            { statements = facadeStatements
+                            , types = facadeTypes
+                            , generatedPrefix = ".._generated"
+                            , functionSuffix = "_sync"
+                            , registrationSource =
+                                if    hasCustomRegistration
+                                then  Some "register_types_sync"
+                                else  None Text
+                            , includeSyncModule = False
+                            }
                       }
                     ]
               else  [] : List Lude.File.Type
 
         let staticFiles =
               [ facade, topInit, coreModule, runtimeModule, statementsInit ]
+              # syncFacadeFiles
+              # syncRuntimeFiles
 
         let allFiles =
                 staticFiles
@@ -352,10 +391,10 @@ let run =
                 (\(t : Text) -> t)
                 input.name.inKebabCase
 
-        let sync =
+        let emitSync =
               Prelude.Optional.fold
                 Bool
-                config.sync
+                config.emitSync
                 Bool
                 (\(b : Bool) -> b)
                 False
@@ -372,7 +411,7 @@ let run =
 
         let resolvedConfig
             : ResolvedConfig
-            = { packageName, importName, sync, onUnsupported }
+            = { packageName, importName, emitSync, onUnsupported }
 
         let skip = merge { Fail = False, Skip = True } resolvedConfig.onUnsupported
 

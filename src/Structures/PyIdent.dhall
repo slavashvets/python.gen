@@ -92,8 +92,15 @@ let moduleReservedNames =
       , "_fetch_many"
       , "_execute_rows_affected"
       , "_execute_void"
+      , "_fetch_optional_sync"
+      , "_fetch_single_sync"
+      , "_fetch_many_sync"
+      , "_execute_rows_affected_sync"
+      , "_execute_void_sync"
       , "_decode_row"
       , "_types"
+      , "sync"
+      , "register_types"
       , "date"
       , "datetime"
       , "time"
@@ -113,6 +120,11 @@ let parameterReservedNames =
       , "_fetch_many"
       , "_execute_rows_affected"
       , "_execute_void"
+      , "_fetch_optional_sync"
+      , "_fetch_single_sync"
+      , "_fetch_many_sync"
+      , "_execute_rows_affected_sync"
+      , "_execute_void_sync"
       ]
 
 let parameterSafeName
