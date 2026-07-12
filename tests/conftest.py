@@ -9,9 +9,13 @@ from __future__ import annotations
 
 import shutil
 import subprocess
+import uuid
+from collections.abc import Iterator
 from pathlib import Path
 
+import psycopg
 import pytest
+from psycopg.conninfo import make_conninfo
 
 from tests._harness import (
     FIXTURE_PROJECT,
@@ -20,6 +24,7 @@ from tests._harness import (
     SRC_DIR,
     admin_database_url,
     effective_database_name,
+    ensure_droppable,
     run_pgn,
 )
 
@@ -54,6 +59,38 @@ def pgn_admin_url() -> str:
     if not name:
         pytest.fail(f"refusing to run against unspecified database in {url!r}")
     return url
+
+
+@pytest.fixture
+def roundtrip_db(pgn_admin_url: str) -> Iterator[str]:
+    """A uniquely named throwaway database on pg0, dropped on teardown."""
+    name = f"pgn_rt_{uuid.uuid4().hex[:12]}"
+    admin = psycopg.connect(pgn_admin_url, autocommit=True)
+    try:
+        # Encoding to bytes sidesteps psycopg's LiteralString-typed execute
+        # overload for these dynamic admin statements (the db name is a generated
+        # hex, not user input).
+        _ = admin.execute(f'CREATE DATABASE "{name}"'.encode())
+    finally:
+        admin.close()
+
+    # Rebuild via conninfo (not string surgery) so host/port/user/params survive,
+    # including a path-less admin URL the guard accepts.
+    target = make_conninfo(pgn_admin_url, dbname=name)
+    try:
+        yield target
+    finally:
+        admin = psycopg.connect(pgn_admin_url, autocommit=True)
+        try:
+            terminate = (
+                "SELECT pg_terminate_backend(pid) FROM pg_stat_activity "
+                "WHERE datname = %s AND pid <> pg_backend_pid()"
+            )
+            _ = admin.execute(terminate.encode(), (name,))
+            ensure_droppable(name)
+            _ = admin.execute(f'DROP DATABASE IF EXISTS "{name}"'.encode())
+        finally:
+            admin.close()
 
 
 @pytest.fixture
