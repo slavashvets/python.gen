@@ -20,7 +20,7 @@ let Config =
 let Input = Model.Scalar
 
 -- Passthrough for primitives; Custom is opaque here. The enum-vs-composite
--- decision needs the project customTypes lookup, which lives in F/G, not here.
+-- decision is mandatory in Member, ParamsMember, and CustomType consumers.
 let ScalarDecode = < Passthrough | Custom >
 
 let Output =

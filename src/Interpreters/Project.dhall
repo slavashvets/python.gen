@@ -6,6 +6,12 @@ let Model = ../Deps/Contract.dhall
 
 let Sdk = ../Deps/Sdk.dhall
 
+let CustomKind = ../Structures/CustomKind.dhall
+
+let PyIdent = ../Structures/PyIdent.dhall
+
+let Value = ./Value.dhall
+
 let QueryGen = ./Query.dhall
 
 let CustomTypeGen = ./CustomType.dhall
@@ -71,6 +77,75 @@ let generatedHeader =
 let withHeader =
       \(file : Lude.File.Type) ->
         { path = file.path, content = generatedHeader ++ file.content }
+
+let lookupConfig
+    : ResolvedConfig
+    = { packageName = ""
+      , importName = ""
+      , sync = False
+      , onUnsupported = OnUnsupported.Mode.Fail
+      }
+
+let memberPyType =
+      \(member : Model.Member) ->
+        let valuePyType =
+              merge
+                { Ok =
+                    \(wrapped : { value : Value.Output, warnings : List Report }) ->
+                      wrapped.value.pyType
+                , Err = \(_ : Report) -> "object"
+                }
+                (Value.run lookupConfig member.value)
+
+        in  valuePyType ++ (if member.isNullable then " | None" else "")
+
+let compositeFields =
+      \(members : List Model.Member) ->
+        Prelude.List.map
+          Model.Member
+          CustomKind.CompositeField
+          ( \(member : Model.Member) ->
+              { fieldName = PyIdent.pySafeName member.name.inSnakeCase
+              , pyType = memberPyType member
+              }
+          )
+          members
+
+let IndexedCustomType = { index : Natural, value : Model.CustomType }
+
+let buildLookup =
+      \(customTypes : List Model.CustomType) ->
+        Prelude.List.fold
+          IndexedCustomType
+          (Prelude.List.indexed Model.CustomType customTypes)
+          CustomKind.Lookup
+          ( \(entry : IndexedCustomType) ->
+            \(rest : CustomKind.Lookup) ->
+            \(name : Model.Name) ->
+              let customType = entry.value
+
+              -- Text/equal is a pgn embedded-Dhall builtin. The upstream exit is
+              -- a stable custom kind or id on Scalar.Custom.
+              in  if    Text/equal
+                          name.inSnakeCase
+                          customType.name.inSnakeCase
+                  then  merge
+                          { Composite =
+                              \(members : List Model.Member) ->
+                                CustomKind.TypeKind.Composite
+                                  { fields = compositeFields members
+                                  , order = entry.index
+                                  }
+                          , Enum =
+                              \(_ : List Model.EnumVariant) ->
+                                CustomKind.TypeKind.Enum entry.index
+                          , Domain =
+                              \(_ : Model.Value) -> CustomKind.TypeKind.Absent
+                          }
+                          customType.definition
+                  else  rest name
+          )
+          (\(_ : Model.Name) -> CustomKind.TypeKind.Absent)
 
 -- Schema-qualified type names for psycopg CompositeInfo.fetch (search-path
 -- safe). Reads CustomTypeGen.Output (already a combineOutputs parameter, and
@@ -252,7 +327,7 @@ let combineOutputs =
 -- warning list. Custom types use a pair of plain functions instead of an
 -- equivalent record (see `typeSucceeds`/`typeWarning` below) purely because
 -- that was the faster shape empirically for the type side, and the query
--- side re-uses `queryChecks` because calling QueryGen.run config query from
+-- side re-uses `queryChecks` because calling QueryGen.run config lookup query from
 -- more than one place in this function (once to decide keep/drop, again to
 -- render, again for a warning -- each a fresh, separate call site in the
 -- source) measurably multiplies Dhall's normalization cost per extra call
@@ -301,6 +376,8 @@ let run =
 
         let skip = merge { Fail = False, Skip = True } resolvedConfig.onUnsupported
 
+        let rawLookup = buildLookup input.customTypes
+
         let typeSucceeds
             : Model.CustomType -> Bool
             = \(ct : Model.CustomType) ->
@@ -310,7 +387,7 @@ let run =
                         True
                   , Err = \(_ : Report) -> False
                   }
-                  (CustomTypeGen.run resolvedConfig ct)
+                  (CustomTypeGen.run resolvedConfig rawLookup ct)
 
         -- Nested under the type's own name so the warning names the type
         -- that failed, not just the inner member/column that triggered it
@@ -325,7 +402,7 @@ let run =
                   , Err =
                       \(err : Report) -> Some { path = [ ct.name.inSnakeCase ] # err.path, message = err.message }
                   }
-                  (CustomTypeGen.run resolvedConfig ct)
+                  (CustomTypeGen.run resolvedConfig rawLookup ct)
 
         -- A skipped custom type resolves to Absent for any query that
         -- references it, and that query's own Member/ParamsMember
@@ -338,6 +415,8 @@ let run =
               then  Prelude.List.filter Model.CustomType typeSucceeds input.customTypes
               else  input.customTypes
 
+        let lookup = buildLookup effectiveCustomTypes
+
         -- Fail mode: identical to the pre-Skip code (traverseList straight
         -- over input.customTypes), so its error message/path is unchanged.
         let typesForCombine
@@ -345,7 +424,9 @@ let run =
             = Lude.Compiled.traverseList
                 Model.CustomType
                 CustomTypeGen.Output
-                (\(ct : Model.CustomType) -> CustomTypeGen.run resolvedConfig ct)
+                ( \(ct : Model.CustomType) ->
+                    CustomTypeGen.run resolvedConfig lookup ct
+                )
                 effectiveCustomTypes
 
         let queryChecks
@@ -360,7 +441,7 @@ let run =
                             { query, keep = True, warning = None Report }
                       , Err = \(err : Report) -> { query, keep = False, warning = Some err }
                       }
-                      (QueryGen.run resolvedConfig query)
+                      (QueryGen.run resolvedConfig lookup query)
                 )
                 input.queries
 
@@ -381,7 +462,9 @@ let run =
             = Lude.Compiled.traverseList
                 Model.Query
                 QueryGen.Output
-                (\(query : Model.Query) -> QueryGen.run resolvedConfig query)
+                ( \(query : Model.Query) ->
+                    QueryGen.run resolvedConfig lookup query
+                )
                 effectiveQueries
 
         let skipWarnings

@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import importlib
 import json
+import re
 import shutil
 import subprocess
 import sys
@@ -24,17 +25,61 @@ from pathlib import Path
 
 import pytest
 
-from tests._harness import FIXTURE_PROJECT, HERE, SRC_DIR, run_pgn
+from tests._harness import (
+    FIXTURE_PROJECT,
+    GOLDEN_DIR,
+    GOLDEN_DIR_SYNC,
+    HERE,
+    SRC_DIR,
+    run_pgn,
+)
 
 HARNESS_ROOT = HERE.parent
 
 
-def test_unsupported_pg_type_fails_loudly(pgn_bin: str, pgn_admin_url: str, tmp_path: Path) -> None:
+def _fresh_project(tmp_path: Path) -> tuple[Path, Path]:
     root = tmp_path / "pygen"
     _ = shutil.copytree(SRC_DIR, root / "src")
     project = shutil.copytree(FIXTURE_PROJECT, root / "tests" / "fixture-project")
     (project / "freeze1.pgn.yaml").unlink(missing_ok=True)
     shutil.rmtree(project / "artifacts", ignore_errors=True)
+    return root, project
+
+
+def _write_single_artifact(
+    project: Path,
+    generator: str,
+    package_name: str,
+    mode: str | None = "Fail",
+) -> None:
+    unsupported_config = "" if mode is None else f"      onUnsupported: {mode}\n"
+    _ = (project / "project1.pgn.yaml").write_text(
+        "space: python-gen\n"
+        "name: fixture\n"
+        "version: 0.0.0\n"
+        "postgres: 18\n"
+        "artifacts:\n"
+        "  python:\n"
+        f"    gen: {generator}\n"
+        "    config:\n"
+        f"      packageName: {package_name}\n"
+        f"{unsupported_config}"
+    )
+
+
+def _combined_output(result: subprocess.CompletedProcess[str]) -> str:
+    return result.stdout + result.stderr
+
+
+def _clear_package_modules(package_name: str) -> None:
+    for name in list(sys.modules):
+        if name == package_name or name.startswith(f"{package_name}."):
+            del sys.modules[name]
+
+
+def test_unsupported_pg_type_fails_loudly(pgn_bin: str, pgn_admin_url: str, tmp_path: Path) -> None:
+    _, project = _fresh_project(tmp_path)
+    _write_single_artifact(project, "../../src/package.dhall", "unsupported-money", None)
 
     # `money` has no Python mapping (psycopg decodes it as a locale string, not Decimal),
     # so the Primitive interpreter must reject it instead of guessing.
@@ -50,26 +95,12 @@ def test_unsupported_pg_type_fails_loudly(pgn_bin: str, pgn_admin_url: str, tmp_
 
 
 def test_json_array_param_fails_loudly(pgn_bin: str, pgn_admin_url: str, tmp_path: Path) -> None:
-    root = tmp_path / "pygen"
-    _ = shutil.copytree(SRC_DIR, root / "src")
-    project = shutil.copytree(FIXTURE_PROJECT, root / "tests" / "fixture-project")
-    (project / "freeze1.pgn.yaml").unlink(missing_ok=True)
-    shutil.rmtree(project / "artifacts", ignore_errors=True)
+    _, project = _fresh_project(tmp_path)
 
     # Explicit `onUnsupported: Fail` (vs the absent-key default the money test
     # covers): pins that pgn decodes the bare YAML string "Fail" into the
     # < Fail | Skip > union tag, mirroring the "Skip" decode the Skip test pins.
-    _ = (project / "project1.pgn.yaml").write_text(
-        "space: python-gen\n"
-        "name: fixture\n"
-        "version: 0.0.0\n"
-        "postgres: 18\n"
-        "artifacts:\n"
-        "  python:\n"
-        "    gen: ../../src/package.dhall\n"
-        "    config:\n"
-        "      onUnsupported: Fail\n"
-    )
+    _write_single_artifact(project, "../../src/package.dhall", "unsupported-json-array")
 
     # A jsonb[] param has no faithful psycopg bind (Jsonb wraps a scalar, not
     # element-wise); the generator must reject it, not emit an unwrapped list.
@@ -86,6 +117,221 @@ def test_json_array_param_fails_loudly(pgn_bin: str, pgn_admin_url: str, tmp_pat
     )
 
 
+def _write_contract_probe(
+    root: Path,
+    *,
+    interpreter: str,
+    lookup_kind: str,
+    dimensionality: int,
+    nested: bool,
+) -> None:
+    array_settings = (
+        "None Model.ArraySettings"
+        if dimensionality == 0
+        else f"Some {{ dimensionality = {dimensionality}, elementIsNullable = False }}"
+    )
+    lookup = {
+        "absent": "CustomKind.TypeKind.Absent",
+        "enum": "CustomKind.TypeKind.Enum 0",
+        "composite": (
+            "CustomKind.TypeKind.Composite "
+            "{ fields = [] : List CustomKind.CompositeField, order = 0 }"
+        ),
+    }[lookup_kind]
+    target_input = (
+        "customType"
+        if nested
+        else "member"
+    )
+    custom_type = (
+        """
+        let customType
+            : Model.CustomType
+            = { definition =
+                  < Enum : List Model.EnumVariant
+                  | Composite : List Model.Member
+                  | Domain : Model.Value
+                  >.Composite [ member ]
+              , name
+              , pgName = "outer_custom"
+              , pgSchema = "public"
+              }
+        """
+        if nested
+        else ""
+    )
+    wrapper = f"""
+let Lude = ./Deps/Lude.dhall
+
+let Model = ./Deps/Contract.dhall
+
+let Sdk = ./Deps/Sdk.dhall
+
+let OnUnsupported = ./Structures/OnUnsupported.dhall
+
+let CustomKind = ./Structures/CustomKind.dhall
+
+let Target = ./Interpreters/{interpreter}.dhall
+
+let Config =
+      {{ packageName : Optional Text
+      , sync : Optional Bool
+      , onUnsupported : Optional OnUnsupported.Mode
+      }}
+
+let Config/default =
+      {{ packageName = None Text
+      , sync = None Bool
+      , onUnsupported = None OnUnsupported.Mode
+      }}
+
+let interpreterConfig =
+      {{ packageName = "contract-probe"
+      , importName = "contract_probe"
+      , sync = False
+      , onUnsupported = OnUnsupported.Mode.Fail
+      }}
+
+let run =
+      \\(_ : Config) ->
+      \\(input : Model.Project) ->
+        let name = input.name
+
+        let member
+            : Model.Member
+            = {{ isNullable = False
+              , name
+              , pgName = "probe_value"
+              , value =
+                  {{ arraySettings = {array_settings}
+                  , scalar = Model.Scalar.Custom name
+                  }}
+              }}
+
+{custom_type}
+        let lookup
+            : CustomKind.Lookup
+            = \\(_ : Model.Name) -> {lookup}
+
+        in  Lude.Compiled.map
+              Target.Output
+              Lude.Files.Type
+              (\\(_ : Target.Output) -> [] : Lude.Files.Type)
+              (Target.run interpreterConfig lookup {target_input})
+
+in  Sdk.Sigs.generator Config Config/default run
+"""
+    _ = (root / "src" / "contract-probe.dhall").write_text(wrapper)
+
+
+# PostgreSQL flattens array rank and valid projects resolve customs, so synthetic
+# inputs are required to reach the rank-2 and missing-reference contracts.
+@pytest.mark.parametrize(
+    ("case_id", "interpreter", "lookup_kind", "dimensionality", "nested", "message", "path_tokens"),
+    [
+        pytest.param(
+            "missing_custom",
+            "Member",
+            "absent",
+            0,
+            False,
+            "Custom type not found in project customTypes",
+            ("fixture",),
+            id="missing-custom",
+        ),
+        pytest.param(
+            "nested_custom",
+            "CustomType",
+            "enum",
+            0,
+            True,
+            "Nested custom type members are not supported before PostgreSQL adapter verification",
+            ("fixture", "probe_value"),
+            id="nested-custom-member",
+        ),
+        pytest.param(
+            "composite_array_result",
+            "Member",
+            "composite",
+            1,
+            False,
+            "Array of a composite type is not supported (element-wise decode is unimplemented)",
+            ("fixture", "probe_value"),
+            id="composite-array-result",
+        ),
+        pytest.param(
+            "composite_array_parameter",
+            "ParamsMember",
+            "composite",
+            1,
+            False,
+            "Array of a composite type as a parameter is not supported",
+            ("fixture", "probe_value"),
+            id="composite-array-parameter",
+        ),
+        pytest.param(
+            "enum_rank_two_result",
+            "Member",
+            "enum",
+            2,
+            False,
+            "Array of an enum with dimensionality > 1 is not supported",
+            ("fixture", "probe_value"),
+            id="enum-rank-two-result",
+        ),
+        pytest.param(
+            "enum_rank_two_parameter",
+            "ParamsMember",
+            "enum",
+            2,
+            False,
+            "Array of an enum parameter with dimensionality > 1 is not supported",
+            ("fixture", "probe_value"),
+            id="enum-rank-two-parameter",
+        ),
+    ],
+)
+def test_custom_shape_contracts_fail_loudly(
+    pgn_bin: str,
+    pgn_admin_url: str,
+    tmp_path: Path,
+    case_id: str,
+    interpreter: str,
+    lookup_kind: str,
+    dimensionality: int,
+    nested: bool,
+    message: str,
+    path_tokens: tuple[str, ...],
+) -> None:
+    root, project = _fresh_project(tmp_path)
+    for query_file in (project / "queries").iterdir():
+        query_file.unlink()
+    _write_contract_probe(
+        root,
+        interpreter=interpreter,
+        lookup_kind=lookup_kind,
+        dimensionality=dimensionality,
+        nested=nested,
+    )
+    _write_single_artifact(project, "../../src/contract-probe.dhall", f"probe-{case_id}")
+
+    result = run_pgn(pgn_bin, pgn_admin_url, project, "generate")
+    combined = _combined_output(result)
+    assert result.returncode != 0, f"expected {case_id} to fail:\n{combined}"
+    assert message in combined, f"missing exact diagnostic {message!r}:\n{combined}"
+
+    plain = re.sub(r"\x1b\[[0-9;?]*[A-Za-z]", "", combined)
+    message_at = plain.index(message)
+    diagnostic = plain[max(0, message_at - 500) : message_at + len(message) + 1000]
+    stage = re.search(
+        r"Stage:\s*Generating\s*>\s*python\s*>\s*Compiling\s*>\s*([^\r\n]+)",
+        diagnostic,
+    )
+    assert stage, f"diagnostic had no pgn Stage path:\n{plain}"
+    rendered_path = tuple(re.split(r"\s*>\s*", stage.group(1).strip()))
+    assert rendered_path == path_tokens, f"expected exact path {path_tokens}, got {rendered_path}:\n{plain}"
+
+
 def test_skip_unsupported_drops_offending_units_and_cascades(
     pgn_bin: str, pgn_admin_url: str, tmp_path: Path
 ) -> None:
@@ -94,20 +340,16 @@ def test_skip_unsupported_drops_offending_units_and_cascades(
     Three independent failures in one project: a money result column and a
     jsonb[] param each doom their own statement (Primitive.dhall / ParamsMember
     .dhall); a composite nesting another composite dooms the custom type
-    itself (CustomType.dhall's nestedLookup is hardcoded Absent for any nested
-    custom-type reference) and, because the lookup built from the surviving
-    types resolves it to Absent, the query selecting that composite column
+    itself (CustomType.dhall rejects nested custom members directly) and,
+    because the lookup rebuilt from the surviving types resolves it to Absent,
+    the query selecting that composite column
     cascades into a skip too. Generation must still succeed, the surviving
     statements and all 3 fixture types must be unaffected, no generated file
     may reference a skipped name, the package must still import, and
     basedpyright strict must still pass on the result -- the same gate the
     golden package is held to.
     """
-    root = tmp_path / "pygen"
-    _ = shutil.copytree(SRC_DIR, root / "src")
-    project = shutil.copytree(FIXTURE_PROJECT, root / "tests" / "fixture-project")
-    (project / "freeze1.pgn.yaml").unlink(missing_ok=True)
-    shutil.rmtree(project / "artifacts", ignore_errors=True)
+    _, project = _fresh_project(tmp_path)
 
     # Skip mode evaluates every query twice (the keep/drop check plus the
     # final render; see Interpreters/Project.dhall), and a full-fixture Skip
@@ -119,24 +361,16 @@ def test_skip_unsupported_drops_offending_units_and_cascades(
         if query_file.name.split(".", 1)[0] not in kept_statements:
             query_file.unlink()
 
-    # A single Skip artifact, package name left at its "fixture" default so it
-    # cannot collide with the "specimen_client" package the shared golden/
-    # roundtrip suites import.
-    _ = (project / "project1.pgn.yaml").write_text(
-        "space: python-gen\n"
-        "name: fixture\n"
-        "version: 0.0.0\n"
-        "postgres: 18\n"
-        "artifacts:\n"
-        "  python:\n"
-        "    gen: ../../src/package.dhall\n"
-        "    config:\n"
-        "      onUnsupported: Skip\n"
-    )
+    # A unique package prefix prevents collisions with the golden and roundtrip
+    # packages imported by the shared test process.
+    _write_single_artifact(project, "../../src/package.dhall", "skip-cascade", "Skip")
 
     _ = (project / "queries" / "probe_unsupported.sql").write_text("SELECT 1::money AS amount\n")
     _ = (project / "queries" / "probe_json_array.sql").write_text(
         "SELECT cardinality($payloads::jsonb []) AS n\n"
+    )
+    _ = (project / "queries" / "probe_custom_only.sql").write_text(
+        "SELECT 'happy'::mood AS feeling\n"
     )
     _ = (project / "migrations" / "2.sql").write_text(
         "create type wrapped_point as (\n"
@@ -159,26 +393,30 @@ def test_skip_unsupported_drops_offending_units_and_cascades(
     # Since 0.7.2 pgn surfaces the generator's Compiled.warnings during
     # generate (pgenie-io/pgenie#67), so every skipped unit must be visible in
     # the combined output.
-    combined = (result.stdout + result.stderr).lower()
-    for marker in ("unsupported type", "json/jsonb array", "custom type not found"):
+    combined = _combined_output(result).lower()
+    for marker in (
+        "unsupported type",
+        "json/jsonb array as a parameter is not supported",
+        "nested custom type members are not supported before postgresql adapter verification",
+        "custom type not found in project customtypes",
+    ):
         assert marker in combined, f"expected pgn to surface the warning, {marker!r} missing from output"
 
     generated = project / "artifacts" / "python"
-    package_src = generated / "src" / "fixture"
+    package_name = "skip_cascade"
+    package_src = generated / "src" / package_name
     src = package_src / "_generated"
 
     for name in ("probe_unsupported", "probe_json_array", "probe_nested_composite"):
         assert not (src / "statements" / f"{name}.py").exists(), f"{name} should have been skipped"
     assert not (src / "types" / "wrapped_point.py").exists(), "wrapped_point should have been skipped"
 
-    for name in kept_statements:
+    for name in kept_statements + ["probe_custom_only"]:
         assert (src / "statements" / f"{name}.py").is_file(), f"{name} should not have been skipped"
     for name in ("mood", "point_2_d", "tag_value"):
         assert (src / "types" / f"{name}.py").is_file(), f"{name} should not have been skipped"
 
-    facade = (package_src / "__init__.py").read_text()
-    register = (src / "_register.py").read_text()
-    types_init = (src / "types" / "__init__.py").read_text()
+    generated_python = {path: path.read_text() for path in package_src.rglob("*.py")}
     for orphan in (
         "probe_unsupported",
         "probe_json_array",
@@ -186,25 +424,27 @@ def test_skip_unsupported_drops_offending_units_and_cascades(
         "wrapped_point",
         "WrappedPoint",
     ):
-        assert orphan not in facade, f"facade references skipped {orphan}"
-        assert orphan not in register, f"_register references skipped {orphan}"
-        assert orphan not in types_init, f"types/__init__ references skipped {orphan}"
+        assert not any(orphan in text for text in generated_python.values()), (
+            f"surviving generated output references skipped {orphan}"
+        )
+
+    custom_only = (src / "statements" / "probe_custom_only.py").read_text()
+    assert "from ..types.mood import Mood" in custom_only
+    assert "from typing import cast" not in custom_only
 
     src_root = str(generated / "src")
     sys.path.insert(0, src_root)
     try:
-        for name in list(sys.modules):
-            if name == "fixture" or name.startswith("fixture."):
-                del sys.modules[name]
-        importlib.import_module("fixture")
-        importlib.import_module("fixture._generated._register")
-        for name in kept_statements:
-            importlib.import_module(f"fixture._generated.statements.{name}")
+        _clear_package_modules(package_name)
+        for module_path in sorted(package_src.rglob("*.py")):
+            relative = module_path.relative_to(generated / "src").with_suffix("")
+            parts = list(relative.parts)
+            if parts[-1] == "__init__":
+                parts.pop()
+            importlib.import_module(".".join(parts))
     finally:
         sys.path.remove(src_root)
-        for name in list(sys.modules):
-            if name == "fixture" or name.startswith("fixture."):
-                del sys.modules[name]
+        _clear_package_modules(package_name)
 
     config = tmp_path / "pyrightconfig.json"
     _ = config.write_text(
@@ -231,3 +471,21 @@ def test_skip_unsupported_drops_offending_units_and_cascades(
     assert summary["errorCount"] == 0 and summary["warningCount"] == 0, (
         f"basedpyright strict reported issues on the Skip output: {summary}\n{pyright_result.stdout}"
     )
+
+
+def test_custom_imports_are_unique_and_deterministic() -> None:
+    surfaces = [
+        GOLDEN_DIR / "src" / "specimen_client" / "_generated" / "statements",
+        GOLDEN_DIR_SYNC / "src" / "specimen_sync_client" / "_generated" / "statements",
+    ]
+    custom_import = re.compile(r"^from \.\.types\.[a-zA-Z0-9_]+ import [a-zA-Z0-9_]+$", re.MULTILINE)
+
+    for statements in surfaces:
+        insert_imports = custom_import.findall((statements / "insert_specimen.py").read_text())
+        assert insert_imports == [
+            "from ..types.mood import Mood",
+            "from ..types.point_2_d import Point2D",
+        ]
+        for module in statements.glob("*.py"):
+            imports = custom_import.findall(module.read_text())
+            assert len(imports) == len(set(imports)), f"duplicate custom import in {module}"

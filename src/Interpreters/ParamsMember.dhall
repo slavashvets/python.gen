@@ -4,9 +4,9 @@ let Prelude = ../Deps/Prelude.dhall
 
 let Model = ../Deps/Contract.dhall
 
-let Sdk = ../Deps/Sdk.dhall
-
 let ImportSet = ../Structures/ImportSet.dhall
+
+let CustomKind = ../Structures/CustomKind.dhall
 
 let OnUnsupported = ../Structures/OnUnsupported.dhall
 
@@ -232,6 +232,7 @@ let isJsonArray =
 
 let run =
       \(config : Config) ->
+      \(lookup : CustomKind.Lookup) ->
       \(input : Input) ->
         let fieldName = pySafeName input.name.inSnakeCase
 
@@ -279,9 +280,11 @@ let run =
                       (Lude.Compiled.Type Output)
                       ( \(name : Model.Name) ->
                           let customImport =
-                                { className = name.inPascalCase
-                                , moduleName = name.inSnakeCase
-                                }
+                                \(order : Natural) ->
+                                  { className = name.inPascalCase
+                                  , moduleName = name.inSnakeCase
+                                  , order
+                                  }
 
                           let scalarEncode =
                                 if    input.isNullable
@@ -300,15 +303,72 @@ let run =
                                     then  "None if ${fieldName} is None else ${base}"
                                     else  base
 
-                          let encodeExpr =
-                                if Natural/isZero value.dims then scalarEncode else arrayEncode
+                          let dimsIsOne =
+                                Natural/isZero (Natural/subtract 1 value.dims)
 
-                          in  Lude.Compiled.ok
-                                Output
-                                ( mkOutput
-                                    (ImportSet.combine value.imports (ImportSet.custom customImport))
-                                    encodeExpr
-                                )
+                          in  merge
+                                { Enum =
+                                    \(order : Natural) ->
+                                      let enumImport =
+                                            ImportSet.customEnum
+                                              (customImport order)
+
+                                      in  if Natural/isZero value.dims
+                                          then  Lude.Compiled.ok
+                                                  Output
+                                                  ( mkOutput
+                                                      ( ImportSet.combine
+                                                          value.imports
+                                                          enumImport
+                                                      )
+                                                      scalarEncode
+                                                  )
+                                          else  if dimsIsOne
+                                          then  Lude.Compiled.ok
+                                                  Output
+                                                  ( mkOutput
+                                                      ( ImportSet.combine
+                                                          value.imports
+                                                          enumImport
+                                                      )
+                                                      arrayEncode
+                                                  )
+                                          else  Lude.Compiled.report
+                                                  Output
+                                                  [ input.pgName
+                                                  , name.inSnakeCase
+                                                  ]
+                                                  "Array of an enum parameter with dimensionality > 1 is not supported"
+                                , Composite =
+                                    \ ( composite
+                                      : { fields :
+                                            List CustomKind.CompositeField
+                                        , order : Natural
+                                        }
+                                      ) ->
+                                      if Natural/isZero value.dims
+                                      then  Lude.Compiled.ok
+                                              Output
+                                              ( mkOutput
+                                                  ( ImportSet.combine
+                                                      value.imports
+                                                      ( ImportSet.customComposite
+                                                          (customImport composite.order)
+                                                      )
+                                                  )
+                                                  scalarEncode
+                                              )
+                                      else  Lude.Compiled.report
+                                              Output
+                                              [ input.pgName, name.inSnakeCase ]
+                                              "Array of a composite type as a parameter is not supported"
+                                , Absent =
+                                    Lude.Compiled.report
+                                      Output
+                                      [ name.inSnakeCase ]
+                                      "Custom type not found in project customTypes"
+                                }
+                                (lookup name)
                       )
                       ( if    isJsonArrayParam
                         then  Lude.Compiled.report
@@ -329,4 +389,4 @@ let run =
 
         in  Lude.Compiled.flatMap Value.Output Output buildOutput compiledValue
 
-in  Sdk.Sigs.interpreter Config Input Output run
+in  { Input, Output, run }

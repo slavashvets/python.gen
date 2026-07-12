@@ -12,7 +12,6 @@ from psycopg import Connection
 
 from .._runtime import fetch_single
 from ..types.tag_value import TagValue
-from ..types.tag_value import TagValue
 
 
 @dataclass(frozen=True, slots=True)

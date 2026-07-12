@@ -14,8 +14,6 @@ from psycopg import AsyncConnection
 from .._core import require_array
 from .._runtime import fetch_many
 from ..types.mood import Mood
-from ..types.mood import Mood
-from ..types.mood import Mood
 
 
 @dataclass(frozen=True, slots=True)

@@ -132,7 +132,7 @@ let customImportLines
           ( \(c : ImportSet.CustomImport) ->
               "from ${typesPrefix}.${c.moduleName} import ${c.className}"
           )
-          imports.customTypes
+          (ImportSet.sortedCustoms imports)
 
 let renderImports
     : Params -> Text
@@ -146,7 +146,7 @@ let renderImports
                 # importLineIf rowIsPresent "from dataclasses import dataclass"
                 # datetimeImport imports
                 # importLineIf imports.decimal "from decimal import Decimal"
-                # importLineIf rowIsPresent "from typing import cast"
+                # importLineIf imports.needsCast "from typing import cast"
                 # importLineIf imports.uuid "from uuid import UUID"
 
         let psycopgBlock =

@@ -14,7 +14,6 @@ from psycopg import AsyncConnection
 from .._core import JsonValue
 from .._runtime import fetch_many
 from ..types.mood import Mood
-from ..types.mood import Mood
 from ..types.point_2_d import Point2D
 
 

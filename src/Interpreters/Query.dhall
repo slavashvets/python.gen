@@ -4,9 +4,9 @@ let Prelude = ../Deps/Prelude.dhall
 
 let Model = ../Deps/Contract.dhall
 
-let Sdk = ../Deps/Sdk.dhall
-
 let ImportSet = ../Structures/ImportSet.dhall
+
+let CustomKind = ../Structures/CustomKind.dhall
 
 let PyIdent = ../Structures/PyIdent.dhall
 
@@ -136,6 +136,7 @@ let render =
 
 let run =
       \(config : Config) ->
+      \(lookup : CustomKind.Lookup) ->
       \(input : Input) ->
         let rowClassName = input.name.inPascalCase ++ "Row"
 
@@ -151,7 +152,11 @@ let run =
                   ( Compiled.nest
                       ResultModule.Output
                       "result"
-                      (ResultModule.run (config /\ { rowClassName }) input.result)
+                      ( ResultModule.run
+                          (config /\ { rowClassName })
+                          lookup
+                          input.result
+                      )
                   )
                   ( Compiled.nest
                       QueryFragmentsModule.Output
@@ -168,11 +173,11 @@ let run =
                               Compiled.nest
                                 ParamsMember.Output
                                 member.pgName
-                                (ParamsMember.run config member)
+                                (ParamsMember.run config lookup member)
                           )
                           input.params
                       )
                   )
               )
 
-in  Sdk.Sigs.interpreter Config Input Output run
+in  { Input, Output, run }

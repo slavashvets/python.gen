@@ -4,9 +4,9 @@ let Lude = ../Deps/Lude.dhall
 
 let Model = ../Deps/Contract.dhall
 
-let Sdk = ../Deps/Sdk.dhall
-
 let ImportSet = ../Structures/ImportSet.dhall
+
+let CustomKind = ../Structures/CustomKind.dhall
 
 let OnUnsupported = ../Structures/OnUnsupported.dhall
 
@@ -69,6 +69,7 @@ let cardinalityShape
 
 let rowsOutput =
       \(config : Config) ->
+      \(lookup : CustomKind.Lookup) ->
       \(rows : Model.ResultRows) ->
         let shape = cardinalityShape rows.cardinality config.rowClassName
 
@@ -92,18 +93,20 @@ let rowsOutput =
               )
               ( ResultColumns.run
                   config.{ packageName, importName, sync, onUnsupported }
+                  lookup
                   columns
               )
 
 let run =
       \(config : Config) ->
+      \(lookup : CustomKind.Lookup) ->
       \(input : Input) ->
         merge
           { Void = Compiled.ok Output (noResult "None" "execute_void")
           , RowsAffected =
               Compiled.ok Output (noResult "int" "execute_rows_affected")
-          , Rows = rowsOutput config
+          , Rows = rowsOutput config lookup
           }
           input
 
-in  Sdk.Sigs.interpreter Config Input Output run /\ { RowClass }
+in  { Input, Output, RowClass, run }

@@ -102,27 +102,19 @@ and the new stderr output only appears when warnings are non-empty.
 
 ## 3. gen-sdk: `kind` tag or `Natural` index on `Scalar.Custom`
 
-**WITHDRAWN.** `buildLookup`'s only consumer of the fork-only `Text/equal`
-builtin was resolved locally, with no gen-sdk contract change needed:
-custom-type decode/encode now dispatches through named
-`_decode`/`_decode_array`/`_encode` methods generated onto each custom
-type's own Python class (`CompositeModule.dhall`/`EnumModule.dhall`),
-called by name from every reference site, instead of resolving
-classification/fields via a project-wide structural search. `buildLookup`
-and `Structures/CustomKind.dhall` are deleted; see
-`docs/plans/2026-07-11-reusable-custom-type-codecs.md` and DESIGN.md
-section 12. This section is kept for the historical record of why the ask
-existed, not as an open request.
-
 ### Motivation
 
-This is the ask already planned in DESIGN.md, section 12. The generator's
-last remaining use of the fork-only `Text/equal` builtin is
-`Interpreters/Project.dhall`'s `buildLookup`, which matches a custom type
-by its snake-case name while building the `CustomKind.Lookup`. It returns a
-structural `TypeKind` value, not `Text`, so the `Text/replace`-based trick
-that removed `Text/equal` from keyword sanitizing (section 13) does not
-carry over.
+Project-wide custom-type lookup is required for sound Skip behavior. After
+an unsupported custom type is removed, every dependent statement must
+resolve that reference as absent and be removed too. The same
+classification is needed at result and parameter boundaries while the
+current class codecs remain, and it is the basis for removing those codecs
+in a later stage.
+
+`Interpreters/Project.dhall` currently matches custom types by snake-case
+name through `Text/equal`, a builtin supplied only by pgn's embedded Dhall
+runtime. The lookup returns a structural `TypeKind`, so the Text-only
+replacement technique used by identifier sanitizing cannot replace it.
 
 ### Proposed change
 
@@ -136,17 +128,9 @@ this generator can do unilaterally.
 `buildLookup`'s name-equality matching, which removes the last need for the
 forked `Text/equal` builtin in this generator's own code.
 
-Sequencing constraint: the pragma work in ask 1 adds `Text/equal` uses in
-`Pragma.dhall`, so landing this ask alone does not de-fork the generator.
-Full removal of the fork dependency is possible only after ask 1 lands and
-`Pragma.dhall` is deleted; the order matters and is part of this
-negotiation, not an implementation detail.
-
 ### Compatibility notes
 
 A new field on `Scalar.Custom` touches every gen-sdk consumer (java.gen
 included), so it should be introduced in coordination with them. This
-generator pins gen-sdk imports by sha256 and adopts the change on the next
-pin bump. Note that gen-sdk's own `Fixtures` module also relies on the fork
-builtin (section 12), so this ask de-forks generators, not gen-sdk's full
-package entry point.
+generator pins gen-sdk imports by sha256 and adopts the change on a
+deliberate future pin bump.

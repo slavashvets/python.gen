@@ -4,9 +4,9 @@ let Prelude = ../Deps/Prelude.dhall
 
 let Model = ../Deps/Contract.dhall
 
-let Sdk = ../Deps/Sdk.dhall
-
 let ImportSet = ../Structures/ImportSet.dhall
+
+let CustomKind = ../Structures/CustomKind.dhall
 
 let OnUnsupported = ../Structures/OnUnsupported.dhall
 
@@ -73,6 +73,7 @@ let renderExtraImports =
 
 let run =
       \(config : Config) ->
+      \(lookup : CustomKind.Lookup) ->
       \(input : Input) ->
         let typeName = input.name.inPascalCase
 
@@ -113,7 +114,20 @@ let run =
                         = Lude.Compiled.traverseList
                             Model.Member
                             MemberGen.Output
-                            ( \(m : Model.Member) -> MemberGen.run config m )
+                            ( \(m : Model.Member) ->
+                                merge
+                                  { Primitive =
+                                      \(_ : Model.Primitive) ->
+                                        MemberGen.run config lookup m
+                                  , Custom =
+                                      \(name : Model.Name) ->
+                                        Lude.Compiled.report
+                                          MemberGen.Output
+                                          [ m.pgName, name.inSnakeCase ]
+                                          "Nested custom type members are not supported before PostgreSQL adapter verification"
+                                  }
+                                  m.value.scalar
+                            )
                             members
 
                     let assemble =
@@ -169,4 +183,4 @@ let run =
               }
               input.definition
 
-in  Sdk.Sigs.interpreter Config Input Output run
+in  { Input, Output, run }
