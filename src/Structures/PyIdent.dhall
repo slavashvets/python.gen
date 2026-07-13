@@ -85,8 +85,8 @@ let pySafeName
     = sanitizeAgainst pythonKeywords
 
 let moduleReservedNames =
-      [ "_cast"
-      , "_require_array"
+      [ "_db_types"
+      , "_args_row"
       , "_fetch_optional"
       , "_fetch_single"
       , "_fetch_many"
@@ -97,8 +97,6 @@ let moduleReservedNames =
       , "_fetch_many_sync"
       , "_execute_rows_affected_sync"
       , "_execute_void_sync"
-      , "_decode_row"
-      , "_types"
       , "sync"
       , "register_types"
       , "date"
@@ -114,7 +112,7 @@ let parameterReservedNames =
       , "decode"
       , "cur"
       , "row"
-      , "_decode_row"
+      , "_args_row"
       , "_fetch_optional"
       , "_fetch_single"
       , "_fetch_many"

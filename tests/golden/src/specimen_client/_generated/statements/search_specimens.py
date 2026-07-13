@@ -4,34 +4,15 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import cast as _cast
 
 from psycopg import AsyncConnection, Connection
+from psycopg.rows import args_row as _args_row
 from psycopg.types.json import Jsonb
 
 from .._core import JsonValue
 from .._runtime import fetch_many as _fetch_many
 from ..sync._runtime import fetch_many as _fetch_many_sync
-
-
-@dataclass(frozen=True, slots=True)
-class SearchSpecimensRow:
-    id: int
-    title: str
-    label: str
-    meta: JsonValue
-
-
-def _decode_row(row: Mapping[str, object]) -> SearchSpecimensRow:
-    return SearchSpecimensRow(
-        id=_cast(int, row["id"]),
-        title=_cast(str, row["title"]),
-        label=_cast(str, row["label"]),
-        meta=_cast(JsonValue, row["meta"]),
-    )
-
 
 SQL = """\
 -- many: nullable parameter via coalesce, jsonb containment parameter, and a
@@ -47,7 +28,13 @@ WHERE
 ORDER BY id ASC
 """
 
-_SQL = SQL.encode()
+
+@dataclass(frozen=True, slots=True)
+class SearchSpecimensRow:
+    id: int
+    title: str
+    label: str
+    meta: JsonValue
 
 
 async def search_specimens(
@@ -62,7 +49,7 @@ async def search_specimens(
         "meta_filter": None if meta_filter is None else Jsonb(meta_filter),
         "label": label,
     }
-    return await _fetch_many(conn, _SQL, params, _decode_row)
+    return await _fetch_many(conn, SQL, params, _args_row(SearchSpecimensRow))
 
 
 def search_specimens_sync(
@@ -77,4 +64,4 @@ def search_specimens_sync(
         "meta_filter": None if meta_filter is None else Jsonb(meta_filter),
         "label": label,
     }
-    return _fetch_many_sync(conn, _SQL, params, _decode_row)
+    return _fetch_many_sync(conn, SQL, params, _args_row(SearchSpecimensRow))

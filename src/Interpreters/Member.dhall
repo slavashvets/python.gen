@@ -23,19 +23,10 @@ let Config =
 
 let Input = Model.Member
 
--- decodeExpr is a Dhall function: given the source expression (e.g. row["x"] or
--- a composite tuple slot), it returns the Python decode expression. ResultColumns
--- and CustomType compose these so decode logic stays next to the type info.
-let Output =
-      { fieldName : Text
-      , pgName : Text
-      , pyType : Text
-      , isNullable : Bool
-      , imports : ImportSet.Type
-      , decodeExpr : Text -> Text
-      }
+let Output = { fieldName : Text, pyType : Text, imports : ImportSet.Type }
 
-let run =
+let runWithPrefix =
+      \(prefix : Text) ->
       \(config : Config) ->
       \(lookup : CustomKind.Lookup) ->
       \(input : Input) ->
@@ -49,25 +40,17 @@ let run =
               \(value : Value.Output) ->
                 let nullableSuffix = if input.isNullable then " | None" else ""
 
-                let pyType = value.pyType ++ nullableSuffix
-
-                let castTarget = pyType
+                let pyType = Value.qualifyCustom prefix value ++ nullableSuffix
 
                 let baseImports = value.imports
-
-                let passthroughDecode =
-                      \(src : Text) -> "_cast(${castTarget}, ${src})"
 
                 in  merge
                       { Passthrough =
                           Lude.Compiled.ok
                             Output
                             { fieldName
-                            , pgName = input.pgName
                             , pyType
-                            , isNullable = input.isNullable
-                            , imports = ImportSet.combine baseImports ImportSet.cast
-                            , decodeExpr = passthroughDecode
+                            , imports = baseImports
                             }
                       , Custom =
                           Prelude.Optional.fold
@@ -87,16 +70,9 @@ let run =
                                 let mkOutput =
                                       \(customImports : ImportSet.Type) ->
                                         { fieldName
-                                        , pgName = input.pgName
                                         , pyType
-                                        , isNullable = input.isNullable
                                         , imports =
-                                            ImportSet.combineAll
-                                              [ baseImports
-                                              , customImports
-                                              , ImportSet.cast
-                                              ]
-                                        , decodeExpr = passthroughDecode
+                                            ImportSet.combine baseImports customImports
                                         }
 
                                 let dimsAtMostTwo =
@@ -168,4 +144,6 @@ let run =
 
         in  Lude.Compiled.flatMap Value.Output Output buildOutput compiledValue
 
-in  { Input, Output, run }
+let run = runWithPrefix ""
+
+in  { Input, Output, run, runWithPrefix }

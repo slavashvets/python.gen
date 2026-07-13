@@ -29,7 +29,6 @@ let Output =
       , pyType : Text
       , imports : ImportSet.Type
       , bindExpr : Text
-      , needsJsonbImport : Bool
       }
 
 -- True when the primitive is exactly json or jsonb (every other variant is
@@ -242,7 +241,8 @@ let run =
         let buildOutput =
               \(value : Value.Output) ->
                 let pyType =
-                      value.pyType ++ (if input.isNullable then " | None" else "")
+                      Value.qualifyCustom "_db_types." value
+                      ++  (if input.isNullable then " | None" else "")
 
                 let jsonImport =
                       if    needsJsonbImport
@@ -257,7 +257,6 @@ let run =
                         , pyType
                         , imports = ImportSet.combine typeImports jsonImport
                         , bindExpr
-                        , needsJsonbImport
                         }
 
                 in  Prelude.Optional.fold

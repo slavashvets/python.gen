@@ -4,102 +4,20 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import date, datetime
 from decimal import Decimal
-from typing import cast as _cast
 from uuid import UUID
 
 from psycopg import AsyncConnection, Connection
+from psycopg.rows import args_row as _args_row
 from psycopg.types.json import Json
 from psycopg.types.json import Jsonb
 
 from .._core import JsonValue
 from .._runtime import fetch_single as _fetch_single
 from ..sync._runtime import fetch_single as _fetch_single_sync
-from ..types.a_codec_wrapper import ACodecWrapper
-from ..types.mood import Mood
-from ..types.point_2_d import Point2D
-from ..types.z_codec_payload import ZCodecPayload
-
-
-@dataclass(frozen=True, slots=True)
-class InsertSpecimenRow:
-    id: int
-    pub_id: UUID
-    flag: bool
-    small: int
-    medium: int
-    large: int
-    ratio: float
-    precise: float
-    title: str
-    code: str
-    letter: str
-    born_on: date
-    created_at: datetime
-    amount: Decimal
-    blob: bytes
-    doc_json: JsonValue
-    doc_jsonb: JsonValue
-    maybe_text: str | None
-    maybe_int: int | None
-    maybe_uuid: UUID | None
-    maybe_ts: datetime | None
-    maybe_num: Decimal | None
-    tags: list[str | None]
-    related_ids: list[UUID | None] | None
-    grid: list[int | None] | None
-    feeling: Mood
-    moods: list[Mood | None] | None
-    origin: Point2D | None
-    codec_payload: ZCodecPayload
-    codec_payloads: list[ZCodecPayload | None]
-    codec_wrapper: ACodecWrapper | None
-    label: str
-    rev: int
-    meta: JsonValue
-
-
-def _decode_row(row: Mapping[str, object]) -> InsertSpecimenRow:
-    return InsertSpecimenRow(
-        id=_cast(int, row["id"]),
-        pub_id=_cast(UUID, row["pub_id"]),
-        flag=_cast(bool, row["flag"]),
-        small=_cast(int, row["small"]),
-        medium=_cast(int, row["medium"]),
-        large=_cast(int, row["large"]),
-        ratio=_cast(float, row["ratio"]),
-        precise=_cast(float, row["precise"]),
-        title=_cast(str, row["title"]),
-        code=_cast(str, row["code"]),
-        letter=_cast(str, row["letter"]),
-        born_on=_cast(date, row["born_on"]),
-        created_at=_cast(datetime, row["created_at"]),
-        amount=_cast(Decimal, row["amount"]),
-        blob=_cast(bytes, row["blob"]),
-        doc_json=_cast(JsonValue, row["doc_json"]),
-        doc_jsonb=_cast(JsonValue, row["doc_jsonb"]),
-        maybe_text=_cast(str | None, row["maybe_text"]),
-        maybe_int=_cast(int | None, row["maybe_int"]),
-        maybe_uuid=_cast(UUID | None, row["maybe_uuid"]),
-        maybe_ts=_cast(datetime | None, row["maybe_ts"]),
-        maybe_num=_cast(Decimal | None, row["maybe_num"]),
-        tags=_cast(list[str | None], row["tags"]),
-        related_ids=_cast(list[UUID | None] | None, row["related_ids"]),
-        grid=_cast(list[int | None] | None, row["grid"]),
-        feeling=_cast(Mood, row["feeling"]),
-        moods=_cast(list[Mood | None] | None, row["moods"]),
-        origin=_cast(Point2D | None, row["origin"]),
-        codec_payload=_cast(ZCodecPayload, row["codec_payload"]),
-        codec_payloads=_cast(list[ZCodecPayload | None], row["codec_payloads"]),
-        codec_wrapper=_cast(ACodecWrapper | None, row["codec_wrapper"]),
-        label=_cast(str, row["label"]),
-        rev=_cast(int, row["rev"]),
-        meta=_cast(JsonValue, row["meta"]),
-    )
-
+from .. import types as _db_types
 
 SQL = """\
 -- single row: insert ... returning the full type surface.
@@ -138,7 +56,43 @@ RETURNING
   label, rev, meta
 """
 
-_SQL = SQL.encode()
+
+@dataclass(frozen=True, slots=True)
+class InsertSpecimenRow:
+    id: int
+    pub_id: UUID
+    flag: bool
+    small: int
+    medium: int
+    large: int
+    ratio: float
+    precise: float
+    title: str
+    code: str
+    letter: str
+    born_on: date
+    created_at: datetime
+    amount: Decimal
+    blob: bytes
+    doc_json: JsonValue
+    doc_jsonb: JsonValue
+    maybe_text: str | None
+    maybe_int: int | None
+    maybe_uuid: UUID | None
+    maybe_ts: datetime | None
+    maybe_num: Decimal | None
+    tags: list[str | None]
+    related_ids: list[UUID | None] | None
+    grid: list[int | None] | None
+    feeling: _db_types.Mood
+    moods: list[_db_types.Mood | None] | None
+    origin: _db_types.Point2D | None
+    codec_payload: _db_types.ZCodecPayload
+    codec_payloads: list[_db_types.ZCodecPayload | None]
+    codec_wrapper: _db_types.ACodecWrapper | None
+    label: str
+    rev: int
+    meta: JsonValue
 
 
 async def insert_specimen(
@@ -166,12 +120,12 @@ async def insert_specimen(
     tags: list[str | None],
     related_ids: list[UUID | None] | None,
     grid: list[int | None] | None,
-    feeling: Mood,
-    moods: list[Mood | None] | None,
-    origin: Point2D | None,
-    codec_payload: ZCodecPayload,
-    codec_payloads: list[ZCodecPayload | None],
-    codec_wrapper: ACodecWrapper | None,
+    feeling: _db_types.Mood,
+    moods: list[_db_types.Mood | None] | None,
+    origin: _db_types.Point2D | None,
+    codec_payload: _db_types.ZCodecPayload,
+    codec_payloads: list[_db_types.ZCodecPayload | None],
+    codec_wrapper: _db_types.ACodecWrapper | None,
 ) -> InsertSpecimenRow:
     params: dict[str, object] = {
         "flag": flag,
@@ -203,7 +157,7 @@ async def insert_specimen(
         "codec_payloads": codec_payloads,
         "codec_wrapper": codec_wrapper,
     }
-    return await _fetch_single(conn, _SQL, params, _decode_row)
+    return await _fetch_single(conn, SQL, params, _args_row(InsertSpecimenRow))
 
 
 def insert_specimen_sync(
@@ -231,12 +185,12 @@ def insert_specimen_sync(
     tags: list[str | None],
     related_ids: list[UUID | None] | None,
     grid: list[int | None] | None,
-    feeling: Mood,
-    moods: list[Mood | None] | None,
-    origin: Point2D | None,
-    codec_payload: ZCodecPayload,
-    codec_payloads: list[ZCodecPayload | None],
-    codec_wrapper: ACodecWrapper | None,
+    feeling: _db_types.Mood,
+    moods: list[_db_types.Mood | None] | None,
+    origin: _db_types.Point2D | None,
+    codec_payload: _db_types.ZCodecPayload,
+    codec_payloads: list[_db_types.ZCodecPayload | None],
+    codec_wrapper: _db_types.ACodecWrapper | None,
 ) -> InsertSpecimenRow:
     params: dict[str, object] = {
         "flag": flag,
@@ -268,4 +222,4 @@ def insert_specimen_sync(
         "codec_payloads": codec_payloads,
         "codec_wrapper": codec_wrapper,
     }
-    return _fetch_single_sync(conn, _SQL, params, _decode_row)
+    return _fetch_single_sync(conn, SQL, params, _args_row(InsertSpecimenRow))

@@ -4,34 +4,15 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import cast as _cast
 from uuid import UUID
 
 from psycopg import AsyncConnection, Connection
+from psycopg.rows import args_row as _args_row
 
 from .._runtime import fetch_many as _fetch_many
 from ..sync._runtime import fetch_many as _fetch_many_sync
-from ..types.mood import Mood
-
-
-@dataclass(frozen=True, slots=True)
-class ListSpecimensByIdsRow:
-    id: int
-    pub_id: UUID
-    feeling: Mood
-    title: str
-
-
-def _decode_row(row: Mapping[str, object]) -> ListSpecimensByIdsRow:
-    return ListSpecimensByIdsRow(
-        id=_cast(int, row["id"]),
-        pub_id=_cast(UUID, row["pub_id"]),
-        feeling=_cast(Mood, row["feeling"]),
-        title=_cast(str, row["title"]),
-    )
-
+from .. import types as _db_types
 
 SQL = """\
 -- many: array parameter via = any($pub_ids).
@@ -42,7 +23,13 @@ WHERE pub_id = ANY(%(pub_ids)s)
 ORDER BY id ASC
 """
 
-_SQL = SQL.encode()
+
+@dataclass(frozen=True, slots=True)
+class ListSpecimensByIdsRow:
+    id: int
+    pub_id: UUID
+    feeling: _db_types.Mood
+    title: str
 
 
 async def list_specimens_by_ids(
@@ -53,7 +40,7 @@ async def list_specimens_by_ids(
     params: dict[str, object] = {
         "pub_ids": pub_ids,
     }
-    return await _fetch_many(conn, _SQL, params, _decode_row)
+    return await _fetch_many(conn, SQL, params, _args_row(ListSpecimensByIdsRow))
 
 
 def list_specimens_by_ids_sync(
@@ -64,4 +51,4 @@ def list_specimens_by_ids_sync(
     params: dict[str, object] = {
         "pub_ids": pub_ids,
     }
-    return _fetch_many_sync(conn, _SQL, params, _decode_row)
+    return _fetch_many_sync(conn, SQL, params, _args_row(ListSpecimensByIdsRow))

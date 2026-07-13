@@ -99,9 +99,9 @@ let run =
           Lude.Files.Type
               ( [ { path = "query-safe-name.txt"
               , content =
-                      PyIdent.querySafeName "_types"
+                      PyIdent.querySafeName "_db_types"
                   ++  "\n"
-                  ++  PyIdent.querySafeName "_decode_row"
+                  ++  PyIdent.querySafeName "_args_row"
                   ++  "\n"
                   ++  PyIdent.querySafeName "_fetch_many_sync"
                   ++  "\n"
@@ -152,8 +152,8 @@ in  Sdk.Sigs.generator Config Config/default run
     assert result.returncode == 0, f"query-name canary generation failed:\n{result.stdout}\n{result.stderr}"
     output = canary / "artifacts" / "python" / "query-safe-name.txt"
     assert output.read_text().splitlines() == [
-        "_types_query",
-        "_decode_row_query",
+        "_db_types_query",
+        "_args_row_query",
         "_fetch_many_sync_query",
         "sync_query",
         "register_types_query",
@@ -249,33 +249,24 @@ def _assert_statement_structure(statements: Path) -> None:
         ]
         assert f"from .._runtime import {helper} as _{helper}" in source
         assert f"from ..sync._runtime import {helper} as _{helper}_sync" in source
-        assert f"return await _{helper}(conn, _SQL, params, _decode_row)" in source
-        assert f"return _{helper}_sync(conn, _SQL, params, _decode_row)" in source
+        row_classes = [node.name for node in tree.body if isinstance(node, ast.ClassDef)]
+        assert len(row_classes) == 1
+        row_name = row_classes[0]
+        assert f"return await _{helper}(conn, SQL, params, _args_row({row_name}))" in source
+        assert f"return _{helper}_sync(conn, SQL, params, _args_row({row_name}))" in source
         assert f"async def {function_name}(" in source
         assert f"def {function_name}_sync(" in source
-        assert source.count("def _decode_row(") == 1
+        assert source.count("from psycopg.rows import args_row as _args_row") == 1
         assert "def decode_" not in source
-
-        cast_imports = [
-            node
-            for node in tree.body
-            if isinstance(node, ast.ImportFrom) and node.level == 0 and node.module == "typing"
-        ]
-        assert len(cast_imports) == 1
-        assert [(alias.name, alias.asname) for alias in cast_imports[0].names] == [("cast", "_cast")]
-
-        core_require_imports = [
-            alias
-            for node in tree.body
-            if isinstance(node, ast.ImportFrom) and node.level == 2 and node.module == "_core"
-            for alias in node.names
-            if alias.name == "require_array"
-        ]
-        assert not core_require_imports
+        assert "_SQL" not in source
+        assert "_decode_row" not in source
+        assert "_cast" not in source
+        assert "_require_array" not in source
 
     require_array_source = (statements / "require_array.py").read_text()
-    assert "from .._core import require_array as _require_array" not in require_array_source
-    assert '_cast(list[Mood | None] | None, row["moods"])' in require_array_source
+    assert require_array_source.count("from .. import types as _db_types") == 1
+    assert "moods: list[_db_types.Mood | None] | None" in require_array_source
+    assert "_args_row(RequireArrayRow)" in require_array_source
     assert "from datetime import date" in (statements / "date_query.py").read_text()
 
 

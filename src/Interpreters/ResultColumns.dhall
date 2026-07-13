@@ -23,30 +23,18 @@ let Config =
 
 let Input = List Model.Member
 
-let Output = { fieldsBlock : Text, decodeBlock : Text, imports : ImportSet.Type }
+let Output = { fieldsBlock : Text, imports : ImportSet.Type }
 
 let renderField
     : Member.Output -> Text
     = \(col : Member.Output) -> col.fieldName ++ ": " ++ col.pyType
 
-let renderDecodeKwarg
-    : Member.Output -> Text
-    = \(col : Member.Output) ->
-        let src = "row[\"" ++ col.pgName ++ "\"]"
-
-        in  col.fieldName ++ "=" ++ col.decodeExpr src ++ ","
-
 let assemble
     : List Member.Output -> Output
     = \(columns : List Member.Output) ->
+        -- args_row is positional, so Row field order must match pgn columns.
         { fieldsBlock =
             Prelude.Text.concatMapSep "\n" Member.Output renderField columns
-        , decodeBlock =
-            Prelude.Text.concatMapSep
-              "\n"
-              Member.Output
-              renderDecodeKwarg
-              columns
         , imports =
             ImportSet.combineAll
               ( Prelude.List.map
@@ -72,7 +60,7 @@ let run =
                   Compiled.nest
                     Member.Output
                     member.pgName
-                    (Member.run config lookup member)
+                    (Member.runWithPrefix "_db_types." config lookup member)
               )
               input
           )

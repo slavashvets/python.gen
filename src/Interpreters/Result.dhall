@@ -29,14 +29,13 @@ let Config =
 
 let Input = Model.Result
 
-let RowClass = { name : Text, fieldsBlock : Text, decodeBlock : Text }
+let RowClass = { name : Text, fieldsBlock : Text }
 
 let Output =
       { returnType : Text
       , helperName : Text
       , rowClass : Optional RowClass
       , imports : ImportSet.Type
-      , callsDecode : Bool
       }
 
 let noResult
@@ -47,7 +46,6 @@ let noResult
         , helperName
         , rowClass = None RowClass
         , imports = ImportSet.empty
-        , callsDecode = False
         }
 
 let cardinalityShape
@@ -85,10 +83,8 @@ let rowsOutput =
                   , rowClass = Some
                     { name = config.rowClassName
                     , fieldsBlock = cols.fieldsBlock
-                    , decodeBlock = cols.decodeBlock
                     }
                   , imports = cols.imports
-                  , callsDecode = True
                   }
               )
               ( ResultColumns.run

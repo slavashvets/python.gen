@@ -4,31 +4,14 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import cast as _cast
 
 from psycopg import AsyncConnection, Connection
+from psycopg.rows import args_row as _args_row
 
 from .._runtime import fetch_single as _fetch_single
 from ..sync._runtime import fetch_single as _fetch_single_sync
-from ..types.tag_value import TagValue
-
-
-@dataclass(frozen=True, slots=True)
-class InsertTaggedItemRow:
-    id: int
-    name: str
-    tag: TagValue
-
-
-def _decode_row(row: Mapping[str, object]) -> InsertTaggedItemRow:
-    return InsertTaggedItemRow(
-        id=_cast(int, row["id"]),
-        name=_cast(str, row["name"]),
-        tag=_cast(TagValue, row["tag"]),
-    )
-
+from .. import types as _db_types
 
 SQL = """\
 -- single row: insert exercising a single-field composite as a parameter and
@@ -38,30 +21,35 @@ VALUES (%(name)s, %(tag)s)
 RETURNING id, name, tag
 """
 
-_SQL = SQL.encode()
+
+@dataclass(frozen=True, slots=True)
+class InsertTaggedItemRow:
+    id: int
+    name: str
+    tag: _db_types.TagValue
 
 
 async def insert_tagged_item(
     conn: AsyncConnection[object],
     *,
     name: str,
-    tag: TagValue,
+    tag: _db_types.TagValue,
 ) -> InsertTaggedItemRow:
     params: dict[str, object] = {
         "name": name,
         "tag": tag,
     }
-    return await _fetch_single(conn, _SQL, params, _decode_row)
+    return await _fetch_single(conn, SQL, params, _args_row(InsertTaggedItemRow))
 
 
 def insert_tagged_item_sync(
     conn: Connection[object],
     *,
     name: str,
-    tag: TagValue,
+    tag: _db_types.TagValue,
 ) -> InsertTaggedItemRow:
     params: dict[str, object] = {
         "name": name,
         "tag": tag,
     }
-    return _fetch_single_sync(conn, _SQL, params, _decode_row)
+    return _fetch_single_sync(conn, SQL, params, _args_row(InsertTaggedItemRow))

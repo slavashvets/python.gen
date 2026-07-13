@@ -96,7 +96,6 @@ let render =
                 ( \(rc : ResultModule.RowClass) ->
                     { className = rc.name
                     , fieldsBlock = rc.fieldsBlock
-                    , decodeBlock = rc.decodeBlock
                     }
                 )
                 result.rowClass
@@ -112,7 +111,6 @@ let render =
                 { functionName
                 , returnType = result.returnType
                 , helperName = result.helperName
-                , callsDecode = result.callsDecode
                 , sqlLiteral = fragments.sqlLiteral
                 , rowDef
                 , paramSigLines

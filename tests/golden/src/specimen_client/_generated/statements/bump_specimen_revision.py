@@ -17,8 +17,6 @@ SET rev = rev + 1
 WHERE id = %(id)s
 """
 
-_SQL = SQL.encode()
-
 
 async def bump_specimen_revision(
     conn: AsyncConnection[object],
@@ -28,7 +26,7 @@ async def bump_specimen_revision(
     params: dict[str, object] = {
         "id": id,
     }
-    return await _execute_rows_affected(conn, _SQL, params)
+    return await _execute_rows_affected(conn, SQL, params)
 
 
 def bump_specimen_revision_sync(
@@ -39,4 +37,4 @@ def bump_specimen_revision_sync(
     params: dict[str, object] = {
         "id": id,
     }
-    return _execute_rows_affected_sync(conn, _SQL, params)
+    return _execute_rows_affected_sync(conn, SQL, params)

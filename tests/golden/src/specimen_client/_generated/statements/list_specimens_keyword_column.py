@@ -4,28 +4,13 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import cast as _cast
 
 from psycopg import AsyncConnection, Connection
+from psycopg.rows import args_row as _args_row
 
 from .._runtime import fetch_many as _fetch_many
 from ..sync._runtime import fetch_many as _fetch_many_sync
-
-
-@dataclass(frozen=True, slots=True)
-class ListSpecimensKeywordColumnRow:
-    id: int
-    class_: str
-
-
-def _decode_row(row: Mapping[str, object]) -> ListSpecimensKeywordColumnRow:
-    return ListSpecimensKeywordColumnRow(
-        id=_cast(int, row["id"]),
-        class_=_cast(str, row["class"]),
-    )
-
 
 SQL = """\
 -- Keyword result-column coverage: the column aliased to the reserved word class
@@ -40,18 +25,22 @@ FROM specimen
 ORDER BY id ASC
 """
 
-_SQL = SQL.encode()
+
+@dataclass(frozen=True, slots=True)
+class ListSpecimensKeywordColumnRow:
+    id: int
+    class_: str
 
 
 async def list_specimens_keyword_column(
     conn: AsyncConnection[object],
 ) -> list[ListSpecimensKeywordColumnRow]:
     params: dict[str, object] = {}
-    return await _fetch_many(conn, _SQL, params, _decode_row)
+    return await _fetch_many(conn, SQL, params, _args_row(ListSpecimensKeywordColumnRow))
 
 
 def list_specimens_keyword_column_sync(
     conn: Connection[object],
 ) -> list[ListSpecimensKeywordColumnRow]:
     params: dict[str, object] = {}
-    return _fetch_many_sync(conn, _SQL, params, _decode_row)
+    return _fetch_many_sync(conn, SQL, params, _args_row(ListSpecimensKeywordColumnRow))

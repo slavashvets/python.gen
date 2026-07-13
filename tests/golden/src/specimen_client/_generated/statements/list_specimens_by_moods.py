@@ -4,36 +4,15 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import cast as _cast
 from uuid import UUID
 
 from psycopg import AsyncConnection, Connection
+from psycopg.rows import args_row as _args_row
 
 from .._runtime import fetch_many as _fetch_many
 from ..sync._runtime import fetch_many as _fetch_many_sync
-from ..types.mood import Mood
-
-
-@dataclass(frozen=True, slots=True)
-class ListSpecimensByMoodsRow:
-    id: int
-    pub_id: UUID
-    feeling: Mood
-    moods: list[Mood | None] | None
-    title: str
-
-
-def _decode_row(row: Mapping[str, object]) -> ListSpecimensByMoodsRow:
-    return ListSpecimensByMoodsRow(
-        id=_cast(int, row["id"]),
-        pub_id=_cast(UUID, row["pub_id"]),
-        feeling=_cast(Mood, row["feeling"]),
-        moods=_cast(list[Mood | None] | None, row["moods"]),
-        title=_cast(str, row["title"]),
-    )
-
+from .. import types as _db_types
 
 SQL = """\
 -- many: enum array parameter via = any($moods::mood[]); returns the enum array column.
@@ -44,26 +23,33 @@ WHERE feeling = ANY(%(moods)s::mood[])
 ORDER BY id ASC
 """
 
-_SQL = SQL.encode()
+
+@dataclass(frozen=True, slots=True)
+class ListSpecimensByMoodsRow:
+    id: int
+    pub_id: UUID
+    feeling: _db_types.Mood
+    moods: list[_db_types.Mood | None] | None
+    title: str
 
 
 async def list_specimens_by_moods(
     conn: AsyncConnection[object],
     *,
-    moods: list[Mood | None] | None,
+    moods: list[_db_types.Mood | None] | None,
 ) -> list[ListSpecimensByMoodsRow]:
     params: dict[str, object] = {
         "moods": moods,
     }
-    return await _fetch_many(conn, _SQL, params, _decode_row)
+    return await _fetch_many(conn, SQL, params, _args_row(ListSpecimensByMoodsRow))
 
 
 def list_specimens_by_moods_sync(
     conn: Connection[object],
     *,
-    moods: list[Mood | None] | None,
+    moods: list[_db_types.Mood | None] | None,
 ) -> list[ListSpecimensByMoodsRow]:
     params: dict[str, object] = {
         "moods": moods,
     }
-    return _fetch_many_sync(conn, _SQL, params, _decode_row)
+    return _fetch_many_sync(conn, SQL, params, _args_row(ListSpecimensByMoodsRow))

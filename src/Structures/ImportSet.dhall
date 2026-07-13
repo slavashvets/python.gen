@@ -14,8 +14,6 @@ let Self =
       , jsonb : Bool
       , json : Bool
       , jsonValue : Bool
-      , enumArray : Bool
-      , needsCast : Bool
       , customTypes : List CustomImport
       }
 
@@ -29,8 +27,6 @@ let base =
       , jsonb = False
       , json = False
       , jsonValue = False
-      , enumArray = False
-      , needsCast = False
       , customTypes = [] : List CustomImport
       }
 
@@ -73,14 +69,6 @@ let json
 let jsonValue
     : Self
     = base // { jsonValue = True }
-
-let enumArray
-    : Self
-    = base // { enumArray = True }
-
-let cast
-    : Self
-    = base // { needsCast = True }
 
 let custom
     : CustomImport -> Self
@@ -187,8 +175,6 @@ let combine =
         , jsonb = left.jsonb || right.jsonb
         , json = left.json || right.json
         , jsonValue = left.jsonValue || right.jsonValue
-        , enumArray = left.enumArray || right.enumArray
-        , needsCast = left.needsCast || right.needsCast
         , customTypes = dedupCustoms (left.customTypes # right.customTypes)
         }
 
@@ -199,6 +185,10 @@ let combineAll
 let sortedCustoms
     : Self -> List CustomImport
     = \(self : Self) -> sortCustoms self.customTypes
+
+let hasCustom
+    : Self -> Bool
+    = \(self : Self) -> Prelude.Bool.not (Prelude.List.null CustomImport self.customTypes)
 
 in  { Type = Self
     , CustomImport
@@ -212,12 +202,11 @@ in  { Type = Self
     , jsonb
     , json
     , jsonValue
-    , enumArray
-    , cast
     , custom
     , customEnum
     , customComposite
     , combine
     , combineAll
     , sortedCustoms
+    , hasCustom
     }

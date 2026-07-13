@@ -495,8 +495,9 @@ def test_skip_unsupported_drops_offending_units_and_cascades(
         )
 
     custom_only = (src / "statements" / "probe_custom_only.py").read_text()
-    assert "from ..types.mood import Mood" in custom_only
-    assert "from typing import cast as _cast" in custom_only
+    assert "from .. import types as _db_types" in custom_only
+    assert "_db_types.Mood" in custom_only
+    assert "_args_row(ProbeCustomOnlyRow)" in custom_only
 
     src_root = str(generated / "src")
     sys.path.insert(0, src_root)
@@ -539,17 +540,29 @@ def test_skip_unsupported_drops_offending_units_and_cascades(
     )
 
 
-def test_custom_imports_are_unique_and_deterministic() -> None:
+def test_statement_custom_types_use_one_qualified_namespace_import() -> None:
     statements = GOLDEN_DIR / "src" / "specimen_client" / "_generated" / "statements"
-    custom_import = re.compile(r"^from \.\.types\.[a-zA-Z0-9_]+ import [a-zA-Z0-9_]+$", re.MULTILINE)
-
-    insert_imports = custom_import.findall((statements / "insert_specimen.py").read_text())
-    assert insert_imports == [
-        "from ..types.a_codec_wrapper import ACodecWrapper",
-        "from ..types.mood import Mood",
-        "from ..types.point_2_d import Point2D",
-        "from ..types.z_codec_payload import ZCodecPayload",
-    ]
+    namespace_import = "from .. import types as _db_types"
     for module in statements.glob("*.py"):
-        imports = custom_import.findall(module.read_text())
-        assert len(imports) == len(set(imports)), f"duplicate custom import in {module}"
+        source = module.read_text()
+        assert not re.search(r"^from \.\.types\.", source, re.MULTILINE), (
+            f"direct custom type import in {module}"
+        )
+        if "_db_types." in source:
+            assert source.count(namespace_import) == 1, (
+                f"expected one custom type namespace import in {module}"
+            )
+
+    insert_specimen = (statements / "insert_specimen.py").read_text()
+    for annotation in (
+        "feeling: _db_types.Mood",
+        "moods: list[_db_types.Mood | None] | None",
+        "origin: _db_types.Point2D | None",
+        "codec_payload: _db_types.ZCodecPayload",
+        "codec_payloads: list[_db_types.ZCodecPayload | None]",
+        "codec_wrapper: _db_types.ACodecWrapper | None",
+    ):
+        assert annotation in insert_specimen
+
+    insert_tagged_item = (statements / "insert_tagged_item.py").read_text()
+    assert "tag: _db_types.TagValue" in insert_tagged_item

@@ -4,28 +4,13 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import cast as _cast
 
 from psycopg import AsyncConnection, Connection
+from psycopg.rows import args_row as _args_row
 
 from .._runtime import fetch_many as _fetch_many
 from ..sync._runtime import fetch_many as _fetch_many_sync
-
-
-@dataclass(frozen=True, slots=True)
-class ListSpecimensByClassRow:
-    id: int
-    title: str
-
-
-def _decode_row(row: Mapping[str, object]) -> ListSpecimensByClassRow:
-    return ListSpecimensByClassRow(
-        id=_cast(int, row["id"]),
-        title=_cast(str, row["title"]),
-    )
-
 
 SQL = """\
 -- Keyword-param coverage: the placeholder `class` is a Python reserved word, so
@@ -40,7 +25,11 @@ WHERE title = %(class)s
 ORDER BY id ASC
 """
 
-_SQL = SQL.encode()
+
+@dataclass(frozen=True, slots=True)
+class ListSpecimensByClassRow:
+    id: int
+    title: str
 
 
 async def list_specimens_by_class(
@@ -51,7 +40,7 @@ async def list_specimens_by_class(
     params: dict[str, object] = {
         "class": class_,
     }
-    return await _fetch_many(conn, _SQL, params, _decode_row)
+    return await _fetch_many(conn, SQL, params, _args_row(ListSpecimensByClassRow))
 
 
 def list_specimens_by_class_sync(
@@ -62,4 +51,4 @@ def list_specimens_by_class_sync(
     params: dict[str, object] = {
         "class": class_,
     }
-    return _fetch_many_sync(conn, _SQL, params, _decode_row)
+    return _fetch_many_sync(conn, SQL, params, _args_row(ListSpecimensByClassRow))

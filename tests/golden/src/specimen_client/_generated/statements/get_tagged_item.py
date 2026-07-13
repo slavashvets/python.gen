@@ -4,31 +4,14 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import cast as _cast
 
 from psycopg import AsyncConnection, Connection
+from psycopg.rows import args_row as _args_row
 
 from .._runtime import fetch_optional as _fetch_optional
 from ..sync._runtime import fetch_optional as _fetch_optional_sync
-from ..types.tag_value import TagValue
-
-
-@dataclass(frozen=True, slots=True)
-class GetTaggedItemRow:
-    id: int
-    name: str
-    tag: TagValue
-
-
-def _decode_row(row: Mapping[str, object]) -> GetTaggedItemRow:
-    return GetTaggedItemRow(
-        id=_cast(int, row["id"]),
-        name=_cast(str, row["name"]),
-        tag=_cast(TagValue, row["tag"]),
-    )
-
+from .. import types as _db_types
 
 SQL = """\
 -- zero_or_one: select by pk with limit 1; the single-field composite here is
@@ -40,7 +23,12 @@ WHERE id = %(id)s
 LIMIT 1
 """
 
-_SQL = SQL.encode()
+
+@dataclass(frozen=True, slots=True)
+class GetTaggedItemRow:
+    id: int
+    name: str
+    tag: _db_types.TagValue
 
 
 async def get_tagged_item(
@@ -51,7 +39,7 @@ async def get_tagged_item(
     params: dict[str, object] = {
         "id": id,
     }
-    return await _fetch_optional(conn, _SQL, params, _decode_row)
+    return await _fetch_optional(conn, SQL, params, _args_row(GetTaggedItemRow))
 
 
 def get_tagged_item_sync(
@@ -62,4 +50,4 @@ def get_tagged_item_sync(
     params: dict[str, object] = {
         "id": id,
     }
-    return _fetch_optional_sync(conn, _SQL, params, _decode_row)
+    return _fetch_optional_sync(conn, SQL, params, _args_row(GetTaggedItemRow))

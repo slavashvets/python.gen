@@ -69,4 +69,20 @@ let run =
           )
           (Scalar.run config input.scalar)
 
-in  Sdk.Sigs.interpreter Config Input Output run
+let qualifyCustom
+    : Text -> Output -> Text
+    = \(prefix : Text) ->
+      \(value : Output) ->
+        Prelude.Optional.fold
+          Model.Name
+          value.scalar.customRef
+          Text
+          ( \(name : Model.Name) ->
+              Text/replace
+                name.inPascalCase
+                (prefix ++ name.inPascalCase)
+                value.pyType
+          )
+          value.pyType
+
+in  Sdk.Sigs.interpreter Config Input Output run /\ { qualifyCustom }

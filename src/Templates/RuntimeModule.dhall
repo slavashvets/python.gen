@@ -1,70 +1,60 @@
 let Sdk = ../Deps/Sdk.dhall
 
--- The fixed _runtime.py body, emitted once per generated package. No per-query
--- customization. Mirrors DESIGN section 3 with two strict-clean adjustments the
--- design's hard "basedpyright strict, zero warnings" constraint forces: the
--- unused Sequence import is dropped, and each cursor.execute result is bound to
--- `_` so reportUnusedCallResult stays quiet. This module is I/O-only: the shared
--- JsonValue/NoRowError/require_array names live in _core and are re-exported here
--- so off-contract `from .._runtime import ...` keeps working.
+-- The fixed async runtime is emitted once per generated package.
 let content =
       ''
       from __future__ import annotations
 
-      from collections.abc import Callable, Mapping
-      from typing import TypeVar
+      from typing import LiteralString, TypeVar
 
       from psycopg import AsyncConnection
-      from psycopg.rows import dict_row
+      from psycopg.rows import BaseRowFactory
 
-      from ._core import JsonValue as JsonValue, NoRowError as NoRowError, require_array as require_array
+      from ._core import NoRowError
 
       _T = TypeVar("_T")
-      _Row = Mapping[str, object]
-      _Params = Mapping[str, object]
+      _Params = dict[str, object]
 
 
       async def fetch_optional(
           conn: AsyncConnection[object],
-          sql: bytes,
+          sql: LiteralString,
           params: _Params,
-          decode: Callable[[_Row], _T],
+          row_factory: BaseRowFactory[_T],
       ) -> _T | None:
-          async with conn.cursor(row_factory=dict_row) as cur:
+          async with conn.cursor(row_factory=row_factory) as cur:
               _ = await cur.execute(sql, params)
-              row = await cur.fetchone()
-          return None if row is None else decode(row)
+              return await cur.fetchone()
 
 
       async def fetch_single(
           conn: AsyncConnection[object],
-          sql: bytes,
+          sql: LiteralString,
           params: _Params,
-          decode: Callable[[_Row], _T],
+          row_factory: BaseRowFactory[_T],
       ) -> _T:
-          async with conn.cursor(row_factory=dict_row) as cur:
+          async with conn.cursor(row_factory=row_factory) as cur:
               _ = await cur.execute(sql, params)
               row = await cur.fetchone()
           if row is None:
-              raise NoRowError(sql.decode())
-          return decode(row)
+              raise NoRowError(sql)
+          return row
 
 
       async def fetch_many(
           conn: AsyncConnection[object],
-          sql: bytes,
+          sql: LiteralString,
           params: _Params,
-          decode: Callable[[_Row], _T],
+          row_factory: BaseRowFactory[_T],
       ) -> list[_T]:
-          async with conn.cursor(row_factory=dict_row) as cur:
+          async with conn.cursor(row_factory=row_factory) as cur:
               _ = await cur.execute(sql, params)
-              rows = await cur.fetchall()
-          return [decode(row) for row in rows]
+              return await cur.fetchall()
 
 
       async def execute_rows_affected(
           conn: AsyncConnection[object],
-          sql: bytes,
+          sql: LiteralString,
           params: _Params,
       ) -> int:
           async with conn.cursor() as cur:
@@ -74,76 +64,68 @@ let content =
 
       async def execute_void(
           conn: AsyncConnection[object],
-          sql: bytes,
+          sql: LiteralString,
           params: _Params,
       ) -> None:
           async with conn.cursor() as cur:
               _ = await cur.execute(sql, params)
       ''
 
--- The sync runtime lives at `_generated/sync/_runtime.py`. The five helpers
--- are the same shape with `def`/`Connection`/`with`/no-
--- `await`. JsonValue/NoRowError/require_array are re-exported from _core so
--- both surfaces share one canonical identity rather than two equal-but-
--- distinct definitions.
+-- The sync runtime mirrors the async helpers.
 let syncContent =
       ''
       from __future__ import annotations
 
-      from collections.abc import Callable, Mapping
-      from typing import TypeVar
+      from typing import LiteralString, TypeVar
 
       from psycopg import Connection
-      from psycopg.rows import dict_row
+      from psycopg.rows import BaseRowFactory
 
-      from .._core import JsonValue as JsonValue, NoRowError as NoRowError, require_array as require_array
+      from .._core import NoRowError
 
       _T = TypeVar("_T")
-      _Row = Mapping[str, object]
-      _Params = Mapping[str, object]
+      _Params = dict[str, object]
 
 
       def fetch_optional(
           conn: Connection[object],
-          sql: bytes,
+          sql: LiteralString,
           params: _Params,
-          decode: Callable[[_Row], _T],
+          row_factory: BaseRowFactory[_T],
       ) -> _T | None:
-          with conn.cursor(row_factory=dict_row) as cur:
+          with conn.cursor(row_factory=row_factory) as cur:
               _ = cur.execute(sql, params)
-              row = cur.fetchone()
-          return None if row is None else decode(row)
+              return cur.fetchone()
 
 
       def fetch_single(
           conn: Connection[object],
-          sql: bytes,
+          sql: LiteralString,
           params: _Params,
-          decode: Callable[[_Row], _T],
+          row_factory: BaseRowFactory[_T],
       ) -> _T:
-          with conn.cursor(row_factory=dict_row) as cur:
+          with conn.cursor(row_factory=row_factory) as cur:
               _ = cur.execute(sql, params)
               row = cur.fetchone()
           if row is None:
-              raise NoRowError(sql.decode())
-          return decode(row)
+              raise NoRowError(sql)
+          return row
 
 
       def fetch_many(
           conn: Connection[object],
-          sql: bytes,
+          sql: LiteralString,
           params: _Params,
-          decode: Callable[[_Row], _T],
+          row_factory: BaseRowFactory[_T],
       ) -> list[_T]:
-          with conn.cursor(row_factory=dict_row) as cur:
+          with conn.cursor(row_factory=row_factory) as cur:
               _ = cur.execute(sql, params)
-              rows = cur.fetchall()
-          return [decode(row) for row in rows]
+              return cur.fetchall()
 
 
       def execute_rows_affected(
           conn: Connection[object],
-          sql: bytes,
+          sql: LiteralString,
           params: _Params,
       ) -> int:
           with conn.cursor() as cur:
@@ -153,7 +135,7 @@ let syncContent =
 
       def execute_void(
           conn: Connection[object],
-          sql: bytes,
+          sql: LiteralString,
           params: _Params,
       ) -> None:
           with conn.cursor() as cur:

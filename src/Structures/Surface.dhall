@@ -8,7 +8,6 @@ let Surface =
       , runtimePrefix : Text
       , helperSuffix : Text
       , corePrefix : Text
-      , typesPrefix : Text
       }
 
 let async
@@ -20,7 +19,6 @@ let async
       , runtimePrefix = ".._runtime"
       , helperSuffix = ""
       , corePrefix = ".._core"
-      , typesPrefix = "..types"
       }
 
 let sync
@@ -32,7 +30,6 @@ let sync
       , runtimePrefix = "..sync._runtime"
       , helperSuffix = "_sync"
       , corePrefix = ".._core"
-      , typesPrefix = "..types"
       }
 
 in  { Type = Surface, async, sync }

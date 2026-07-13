@@ -4,60 +4,56 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
-from typing import TypeVar
+from typing import LiteralString, TypeVar
 
 from psycopg import Connection
-from psycopg.rows import dict_row
+from psycopg.rows import BaseRowFactory
 
-from .._core import JsonValue as JsonValue, NoRowError as NoRowError, require_array as require_array
+from .._core import NoRowError
 
 _T = TypeVar("_T")
-_Row = Mapping[str, object]
-_Params = Mapping[str, object]
+_Params = dict[str, object]
 
 
 def fetch_optional(
     conn: Connection[object],
-    sql: bytes,
+    sql: LiteralString,
     params: _Params,
-    decode: Callable[[_Row], _T],
+    row_factory: BaseRowFactory[_T],
 ) -> _T | None:
-    with conn.cursor(row_factory=dict_row) as cur:
+    with conn.cursor(row_factory=row_factory) as cur:
         _ = cur.execute(sql, params)
-        row = cur.fetchone()
-    return None if row is None else decode(row)
+        return cur.fetchone()
 
 
 def fetch_single(
     conn: Connection[object],
-    sql: bytes,
+    sql: LiteralString,
     params: _Params,
-    decode: Callable[[_Row], _T],
+    row_factory: BaseRowFactory[_T],
 ) -> _T:
-    with conn.cursor(row_factory=dict_row) as cur:
+    with conn.cursor(row_factory=row_factory) as cur:
         _ = cur.execute(sql, params)
         row = cur.fetchone()
     if row is None:
-        raise NoRowError(sql.decode())
-    return decode(row)
+        raise NoRowError(sql)
+    return row
 
 
 def fetch_many(
     conn: Connection[object],
-    sql: bytes,
+    sql: LiteralString,
     params: _Params,
-    decode: Callable[[_Row], _T],
+    row_factory: BaseRowFactory[_T],
 ) -> list[_T]:
-    with conn.cursor(row_factory=dict_row) as cur:
+    with conn.cursor(row_factory=row_factory) as cur:
         _ = cur.execute(sql, params)
-        rows = cur.fetchall()
-    return [decode(row) for row in rows]
+        return cur.fetchall()
 
 
 def execute_rows_affected(
     conn: Connection[object],
-    sql: bytes,
+    sql: LiteralString,
     params: _Params,
 ) -> int:
     with conn.cursor() as cur:
@@ -67,7 +63,7 @@ def execute_rows_affected(
 
 def execute_void(
     conn: Connection[object],
-    sql: bytes,
+    sql: LiteralString,
     params: _Params,
 ) -> None:
     with conn.cursor() as cur:

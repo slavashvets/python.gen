@@ -12,6 +12,7 @@ statement function against a throwaway database on the local pg0 instance.
 from __future__ import annotations
 
 import asyncio
+import ast
 import importlib
 import inspect
 import json
@@ -459,14 +460,80 @@ def test_roundtrip_type_mappings(client_modules, roundtrip_db: str) -> None:  # 
     asyncio.run(scenario())
 
 
-def test_custom_rows_keep_typed_passthrough_until_c3(client_modules) -> None:  # noqa: ANN001
+def test_statement_modules_use_psycopg_row_factories(generated_tree: Path) -> None:
+    generated = generated_tree / GENERATED_PACKAGE / "_generated"
+    statements = generated / "statements"
+    paths = sorted(path for path in statements.glob("*.py") if path.name != "__init__.py")
+    assert [path.stem for path in paths] == sorted(QUERY_NAMES)
+    assert not (generated / "sync" / "statements").exists()
+
+    sql_count = 0
+    for path in paths:
+        source = path.read_text()
+        tree = ast.parse(source)
+        assignments = [
+            node
+            for node in tree.body
+            if isinstance(node, ast.Assign)
+            and any(isinstance(target, ast.Name) and target.id == "SQL" for target in node.targets)
+        ]
+        assert len(assignments) == 1
+        sql_count += len(assignments)
+        assert "_SQL" not in source
+        assert "_decode_row" not in source
+        assert "_cast" not in source
+        assert "_require_array" not in source
+
+        row_name = ROW_NAMES.get(path.stem)
+        row_classes = [node for node in tree.body if isinstance(node, ast.ClassDef) and node.name.endswith("Row")]
+        assert [node.name for node in row_classes] == ([] if row_name is None else [row_name])
+
+        args_row_imports = [
+            alias
+            for node in tree.body
+            if isinstance(node, ast.ImportFrom) and node.module == "psycopg.rows"
+            for alias in node.names
+            if alias.name == "args_row" and alias.asname == "_args_row"
+        ]
+        assert len(args_row_imports) == (0 if row_name is None else 1)
+
+        if row_name is not None:
+            row_factory_calls = [
+                node
+                for node in ast.walk(tree)
+                if isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Name)
+                and node.func.id == "_args_row"
+            ]
+            assert len(row_factory_calls) == 2
+            assert all(
+                len(call.args) == 1
+                and isinstance(call.args[0], ast.Name)
+                and call.args[0].id == row_name
+                for call in row_factory_calls
+            )
+
+        if "_db_types." in source:
+            assert source.count("from .. import types as _db_types") == 1
+            assert "from ..types." not in source
+
+    assert sql_count == 11
+    wrapper_source = (generated / "types" / "a_codec_wrapper.py").read_text()
+    assert "from .z_codec_payload import ZCodecPayload" in wrapper_source
+    assert "from .mood import Mood" in wrapper_source
+
+
+def test_custom_rows_use_qualified_annotations(client_modules) -> None:  # noqa: ANN001
     _, _, import_module = client_modules
     statement = import_module("specimen_client._generated.statements.insert_specimen")
     source = Path(statement.__file__).read_text()
 
-    assert "def _decode_row" in source
-    assert '_cast(ZCodecPayload, row["codec_payload"])' in source
-    assert '_cast(list[ZCodecPayload | None], row["codec_payloads"])' in source
+    assert "_decode_row" not in source
+    assert "_cast" not in source
+    assert "from .. import types as _db_types" in source
+    assert "codec_payload: _db_types.ZCodecPayload" in source
+    assert "codec_payloads: list[_db_types.ZCodecPayload | None]" in source
+    assert "_args_row(InsertSpecimenRow)" in source
     assert '.pg_decode(' not in source
     assert '.pg_encode(' not in source
 

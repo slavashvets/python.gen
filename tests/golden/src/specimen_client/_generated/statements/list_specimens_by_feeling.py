@@ -4,46 +4,16 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import cast as _cast
 from uuid import UUID
 
 from psycopg import AsyncConnection, Connection
+from psycopg.rows import args_row as _args_row
 
 from .._core import JsonValue
 from .._runtime import fetch_many as _fetch_many
 from ..sync._runtime import fetch_many as _fetch_many_sync
-from ..types.mood import Mood
-from ..types.point_2_d import Point2D
-
-
-@dataclass(frozen=True, slots=True)
-class ListSpecimensByFeelingRow:
-    id: int
-    pub_id: UUID
-    feeling: Mood
-    title: str
-    label: str
-    rev: int
-    origin: Point2D | None
-    tags: list[str | None]
-    meta: JsonValue
-
-
-def _decode_row(row: Mapping[str, object]) -> ListSpecimensByFeelingRow:
-    return ListSpecimensByFeelingRow(
-        id=_cast(int, row["id"]),
-        pub_id=_cast(UUID, row["pub_id"]),
-        feeling=_cast(Mood, row["feeling"]),
-        title=_cast(str, row["title"]),
-        label=_cast(str, row["label"]),
-        rev=_cast(int, row["rev"]),
-        origin=_cast(Point2D | None, row["origin"]),
-        tags=_cast(list[str | None], row["tags"]),
-        meta=_cast(JsonValue, row["meta"]),
-    )
-
+from .. import types as _db_types
 
 SQL = """\
 -- many: select with order by. Enum parameter ($feeling).
@@ -54,26 +24,37 @@ WHERE feeling = %(feeling)s
 ORDER BY id ASC
 """
 
-_SQL = SQL.encode()
+
+@dataclass(frozen=True, slots=True)
+class ListSpecimensByFeelingRow:
+    id: int
+    pub_id: UUID
+    feeling: _db_types.Mood
+    title: str
+    label: str
+    rev: int
+    origin: _db_types.Point2D | None
+    tags: list[str | None]
+    meta: JsonValue
 
 
 async def list_specimens_by_feeling(
     conn: AsyncConnection[object],
     *,
-    feeling: Mood | None,
+    feeling: _db_types.Mood | None,
 ) -> list[ListSpecimensByFeelingRow]:
     params: dict[str, object] = {
         "feeling": feeling,
     }
-    return await _fetch_many(conn, _SQL, params, _decode_row)
+    return await _fetch_many(conn, SQL, params, _args_row(ListSpecimensByFeelingRow))
 
 
 def list_specimens_by_feeling_sync(
     conn: Connection[object],
     *,
-    feeling: Mood | None,
+    feeling: _db_types.Mood | None,
 ) -> list[ListSpecimensByFeelingRow]:
     params: dict[str, object] = {
         "feeling": feeling,
     }
-    return _fetch_many_sync(conn, _SQL, params, _decode_row)
+    return _fetch_many_sync(conn, SQL, params, _args_row(ListSpecimensByFeelingRow))
