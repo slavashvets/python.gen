@@ -83,7 +83,10 @@ jobs:
           fi
 
       - name: Sync the harness venv
-        run: mise x -- uv sync
+        run: mise run install
+
+      - name: Lint the harness and committed generated package
+        run: mise run lint
 
       # Hosted runners cannot fit a full 7-artifact pgn generate (~31 GB peak
       # RSS measured locally); keep only the "python" artifact for this CI
@@ -94,7 +97,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          python3 - <<'EOF'
+          mise exec -- python - <<'EOF'
           from pathlib import Path
 
           p = Path("tests/fixture-project/project1.pgn.yaml")
@@ -166,12 +169,27 @@ jobs:
       - name: Install mise-managed tools
         uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
 
-      - name: Create a venv and install psycopg + basedpyright
+      - name: Create a venv and install contract tools
         run: |
           set -euo pipefail
 
-          mise x -- uv venv contract-shell/.venv
-          mise x -- uv pip install --python contract-shell/.venv/bin/python "psycopg[binary]>=3.3,<4" basedpyright
+          mise exec -- uv venv contract-shell/.venv
+          mise exec -- uv pip install --python contract-shell/.venv/bin/python \
+            "psycopg[binary]>=3.3,<4" \
+            "basedpyright==1.39.7" \
+            "ruff==0.15.20"
+
+      - name: Ruff check the generated package
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          mise exec -- contract-shell/.venv/bin/ruff check \
+            --config "$PWD/pyproject.toml" \
+            contract-shell/src
+          mise exec -- contract-shell/.venv/bin/ruff format --check \
+            --config "$PWD/pyproject.toml" \
+            contract-shell/src
 
       - name: basedpyright strict on the generated package
         shell: bash
@@ -189,7 +207,7 @@ jobs:
           }
           JSON
 
-          output="$(contract-shell/.venv/bin/basedpyright --project contract-pyrightconfig.json --outputjson)" || true
+          output="$(mise exec -- contract-shell/.venv/bin/basedpyright --project contract-pyrightconfig.json --outputjson)" || true
           echo "$output" | jq .
 
           files=$(jq '.summary.filesAnalyzed' <<<"$output")

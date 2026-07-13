@@ -4,8 +4,8 @@
 
 from __future__ import annotations
 
-import asyncio
 import ast
+import asyncio
 import importlib
 import json
 import shutil
@@ -59,11 +59,7 @@ def _fresh_project(tmp_path: Path) -> tuple[Path, Path, str, str]:
     queries = {
         "cast.sql": "SELECT 1::int8 AS value\n",
         "require_array.sql": "SELECT ARRAY['happy'::mood] AS moods\n",
-        "fetch_many.sql": (
-            "SELECT value\n"
-            "FROM (VALUES (1::int8), (2::int8)) AS rows(value)\n"
-            "ORDER BY value\n"
-        ),
+        "fetch_many.sql": ("SELECT value\nFROM (VALUES (1::int8), (2::int8)) AS rows(value)\nORDER BY value\n"),
         "date.sql": "SELECT DATE '2026-07-13' AS value\n",
     }
     for name, sql in queries.items():
@@ -72,12 +68,10 @@ def _fresh_project(tmp_path: Path) -> tuple[Path, Path, str, str]:
     return root, project, package_name, import_name
 
 
-def _assert_private_query_canaries(
-    root: Path, project: Path, pgn_bin: str, pgn_admin_url: str
-) -> None:
+def _assert_private_query_canaries(root: Path, project: Path, pgn_bin: str, pgn_admin_url: str) -> None:
     # pgn rejects leading-underscore query filenames before invoking a generator,
     # so exercise those policy inputs through a pgn-executed synthetic generator.
-    wrapper = r'''
+    wrapper = r"""
 let Lude = ./Deps/Lude.dhall
 
 let Model = ./Deps/Contract.dhall
@@ -129,7 +123,7 @@ let run =
               )
 
 in  Sdk.Sigs.generator Config Config/default run
-'''
+"""
     _ = (root / "src" / "query-safe-name-probe.dhall").write_text(wrapper)
 
     canary = shutil.copytree(project, root / "tests" / "query-safe-name-project")
@@ -182,8 +176,7 @@ def _scratch_database(admin_url: str) -> Iterator[str]:
         admin = psycopg.connect(admin_url, autocommit=True)
         try:
             terminate = (
-                "SELECT pg_terminate_backend(pid) FROM pg_stat_activity "
-                "WHERE datname = %s AND pid <> pg_backend_pid()"
+                "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = %s AND pid <> pg_backend_pid()"
             )
             _ = admin.execute(terminate.encode(), (name,))
             ensure_droppable(name)
@@ -215,9 +208,14 @@ def _facade_statement_exports(facade: Path, *, level: int, function_suffix: str)
         if node.level != level or not node.module.startswith(prefix):
             continue
         module_name = node.module.removeprefix(prefix)
-        query_import = node.names[0]
-        assert query_import.name == f"{module_name}{function_suffix}"
+        expected_name = f"{module_name}{function_suffix}"
+        query_imports = [alias for alias in node.names if alias.name == expected_name]
+        if not query_imports:
+            continue
+        assert len(query_imports) == 1
+        query_import = query_imports[0]
         assert query_import.asname == module_name
+        assert module_name not in exports
         exports[module_name] = query_import.asname
     return exports
 
@@ -235,18 +233,14 @@ def _assert_statement_structure(statements: Path) -> None:
             if isinstance(node, ast.ImportFrom) and node.level == 2 and node.module == "_runtime"
         ]
         assert len(async_runtime_imports) == 1
-        assert [(alias.name, alias.asname) for alias in async_runtime_imports[0].names] == [
-            (helper, f"_{helper}")
-        ]
+        assert [(alias.name, alias.asname) for alias in async_runtime_imports[0].names] == [(helper, f"_{helper}")]
         sync_runtime_imports = [
             node
             for node in tree.body
             if isinstance(node, ast.ImportFrom) and node.level == 2 and node.module == "sync._runtime"
         ]
         assert len(sync_runtime_imports) == 1
-        assert [(alias.name, alias.asname) for alias in sync_runtime_imports[0].names] == [
-            (helper, f"_{helper}_sync")
-        ]
+        assert [(alias.name, alias.asname) for alias in sync_runtime_imports[0].names] == [(helper, f"_{helper}_sync")]
         assert f"from .._runtime import {helper} as _{helper}" in source
         assert f"from ..sync._runtime import {helper} as _{helper}_sync" in source
         row_classes = [node.name for node in tree.body if isinstance(node, ast.ClassDef)]
@@ -297,9 +291,7 @@ def _assert_strict(package_src: Path, tmp_path: Path) -> None:
     )
 
 
-def test_identifier_collisions_roundtrip(
-    pgn_bin: str, pgn_admin_url: str, tmp_path: Path
-) -> None:
+def test_identifier_collisions_roundtrip(pgn_bin: str, pgn_admin_url: str, tmp_path: Path) -> None:
     root, project, package_name, import_name = _fresh_project(tmp_path)
     _assert_private_query_canaries(root, project, pgn_bin, pgn_admin_url)
     result = run_pgn(pgn_bin, pgn_admin_url, project, "generate")
@@ -310,12 +302,8 @@ def test_identifier_collisions_roundtrip(
     statements = package_src / "_generated" / "statements"
     assert package_src.is_dir(), f"pgn did not generate package {package_name!r}"
     _assert_statement_structure(statements)
-    facade_exports = _facade_statement_exports(
-        package_src / "__init__.py", level=1, function_suffix=""
-    )
-    sync_exports = _facade_statement_exports(
-        package_src / "sync" / "__init__.py", level=2, function_suffix="_sync"
-    )
+    facade_exports = _facade_statement_exports(package_src / "__init__.py", level=1, function_suffix="")
+    sync_exports = _facade_statement_exports(package_src / "sync" / "__init__.py", level=2, function_suffix="_sync")
     expected_exports = {name: name for name in EXPECTED_FUNCTIONS}
     assert facade_exports == expected_exports
     assert sync_exports == expected_exports

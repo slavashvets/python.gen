@@ -11,6 +11,7 @@ import os
 import signal
 import subprocess
 import threading
+from contextlib import suppress
 from pathlib import Path
 
 import psycopg
@@ -66,13 +67,7 @@ def effective_database_name(url: str) -> str:
     # them here, else a path-less, dbname-less URL with PGDATABASE set to a protected
     # name would slip past while libpq connected to the protected DB. Empty (OS-user
     # fallback only) returns "" and the caller rejects it.
-    return str(
-        info.get("dbname")
-        or os.environ.get("PGDATABASE")
-        or info.get("user")
-        or os.environ.get("PGUSER")
-        or ""
-    )
+    return str(info.get("dbname") or os.environ.get("PGDATABASE") or info.get("user") or os.environ.get("PGUSER") or "")
 
 
 def _rss_gb(pid: int) -> float | None:
@@ -116,10 +111,8 @@ def run_pgn(pgn_bin: str, admin_url: str, project_dir: Path, *args: str) -> subp
                 state["peak_gb"] = max(float(state["peak_gb"]), rss)  # type: ignore[arg-type]
                 if rss > budget_gb:
                     state["killed"] = True
-                    try:
+                    with suppress(ProcessLookupError, PermissionError):
                         os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
-                    except (ProcessLookupError, PermissionError):
-                        pass
                     return
             if done.wait(2.0):  # normal exit signalled, or poll interval elapsed
                 return

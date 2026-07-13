@@ -14,6 +14,14 @@ description = "Run the generator harness tests"
 depends = ["install"]
 run = "uv run pytest tests -q"
 
+[tasks.lint]
+description = "Check Python lint and formatting"
+depends = ["install"]
+run = '''
+uv run ruff check --config pyproject.toml tests wheel
+uv run ruff format --check --config pyproject.toml tests wheel
+'''
+
 # Cold-cache generate benchmark: current gen (`as Source` Deps) vs the same
 # tree with pre-as-Source Deps, same pgn binary, fresh dhall cache per run.
 # Needs a reachable Postgres (PGN_TEST_DATABASE_URL). See bench/as-source.sh

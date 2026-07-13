@@ -23,6 +23,22 @@ let Params =
 -- names as exports of the package root, not unused imports.
 let alias = \(name : Text) -> "${name} as ${name}"
 
+let importBlock =
+      \(source : Text) ->
+      \(entry : Text) ->
+            "from ${source} import (\n"
+        ++  "    ${entry},\n"
+        ++  ")"
+
+let importBlocks =
+      \(source : Text) ->
+      \(entries : List Text) ->
+        Prelude.Text.concatMapSep
+          "\n"
+          Text
+          (\(entry : Text) -> importBlock source entry)
+          entries
+
 let rowNames
     : List StatementExport -> List Text
     = \(statements : List StatementExport) ->
@@ -44,46 +60,46 @@ let runtimeNames = [ "JsonValue", "NoRowError" ]
 let run =
       \(params : Params) ->
         let runtimeBlock =
-              "from ${params.generatedPrefix}._core import "
-              ++  Prelude.Text.concatMapSep
-                    ", "
-                    Text
-                    alias
-                    runtimeNames
+              importBlocks
+                "${params.generatedPrefix}._core"
+                (Prelude.List.map Text Text alias runtimeNames)
 
         let typeBlock =
               Prelude.Text.concatMapSep
                 "\n"
                 TypeExport
                 ( \(t : TypeExport) ->
-                    "from ${params.generatedPrefix}.types.${t.moduleName} import ${alias t.className}"
+                    importBlock
+                      "${params.generatedPrefix}.types.${t.moduleName}"
+                      (alias t.className)
                 )
                 params.types
 
         let rows = rowNames params.statements
 
-        -- A query's Row class now lives in that query's own statement
-        -- module (there is no shared _rows module anymore), so the row
-        -- alias, when present, rides on the same import line as the
-        -- statement function itself: "from ...statements.fn import fn as
-        -- fn, RowCls as RowCls" -- one line per statement, not two separate
-        -- import blocks.
+        -- A query's Row class lives in its statement module. Keep the row
+        -- alias before the function alias, matching the canonical import order.
         let statementBlock =
               Prelude.Text.concatMapSep
                 "\n"
                 StatementExport
                 ( \(s : StatementExport) ->
-                    let rowSuffix =
+                    let rowEntries =
                           merge
-                            { None = "", Some = \(row : Text) -> ", ${alias row}" }
+                            { None = [] : List Text
+                            , Some = \(row : Text) -> [ alias row ]
+                            }
                             s.rowClassName
 
-                    in      "from ${params.generatedPrefix}.statements.${s.functionName} import "
-                        ++  s.functionName
-                        ++  params.functionSuffix
-                        ++  " as "
-                        ++  s.functionName
-                        ++  rowSuffix
+                    let functionEntry =
+                              s.functionName
+                          ++  params.functionSuffix
+                          ++  " as "
+                          ++  s.functionName
+
+                    in  importBlocks
+                          "${params.generatedPrefix}.statements.${s.functionName}"
+                          (rowEntries # [ functionEntry ])
                 )
                 params.statements
 
@@ -92,61 +108,85 @@ let run =
                 { None = [] : List Text
                 , Some =
                     \(source : Text) ->
-                      [ "from ${params.generatedPrefix}._register import ${source} as register_types"
+                      [ importBlock
+                          "${params.generatedPrefix}._register"
+                          "${source} as register_types"
                       ]
                 }
                 params.registrationSource
 
         let syncBlock =
-              if params.includeSyncModule then [ "from . import sync as sync" ] else [] : List Text
+              if    params.includeSyncModule
+              then  [ importBlock "." "sync as sync" ]
+              else  [] : List Text
 
         let importGroups =
-                  [ runtimeBlock ]
-                # ( if    Prelude.List.null TypeExport params.types
-                    then  [] : List Text
-                    else  [ typeBlock ]
-                  )
+                  syncBlock
+                # [ runtimeBlock ]
+                # registrationBlock
                 # ( if    Prelude.List.null StatementExport params.statements
                     then  [] : List Text
                     else  [ statementBlock ]
                   )
-                # registrationBlock
-                # syncBlock
-
-        let importSection = Prelude.Text.concatSep "\n\n" importGroups
-
-        let allNames =
-                  runtimeNames
-                # Prelude.List.map
-                    TypeExport
-                    Text
-                    (\(t : TypeExport) -> t.className)
-                    params.types
-                # rows
-                # Prelude.List.map
-                    StatementExport
-                    Text
-                    (\(s : StatementExport) -> s.functionName)
-                    params.statements
-                # ( merge
-                      { None = [] : List Text
-                      , Some = \(_ : Text) -> [ "register_types" ]
-                      }
-                      params.registrationSource
+                # ( if    Prelude.List.null TypeExport params.types
+                    then  [] : List Text
+                    else  [ typeBlock ]
                   )
-                # (if params.includeSyncModule then [ "sync" ] else [] : List Text)
 
-        let allEntries =
-              Prelude.Text.concatMap
+        let importSection = Prelude.Text.concatSep "\n" importGroups
+
+        let renderAllBlock =
+              \(operator : Text) ->
+              \(names : List Text) ->
+                    "__all__ ${operator} [\n"
+                ++  Prelude.Text.concatMap
+                      Text
+                      (\(name : Text) -> "    \"${name}\",\n")
+                      names
+                ++  "]"
+
+        let typeNames =
+              Prelude.List.map
+                TypeExport
                 Text
-                (\(name : Text) -> "    \"${name}\",\n")
-                allNames
+                (\(t : TypeExport) -> t.className)
+                params.types
+
+        let functionNames =
+              Prelude.List.map
+                StatementExport
+                Text
+                (\(s : StatementExport) -> s.functionName)
+                params.statements
+
+        let registrationNames =
+              merge
+                { None = [] : List Text
+                , Some = \(_ : Text) -> [ "register_types" ]
+                }
+                params.registrationSource
+
+        let syncNames =
+              if params.includeSyncModule then [ "sync" ] else [] : List Text
+
+        let extraAllGroups =
+              Prelude.List.filter
+                (List Text)
+                (\(group : List Text) -> Prelude.Bool.not (Prelude.List.null Text group))
+                [ typeNames, rows, functionNames, registrationNames, syncNames ]
+
+        let allBlocks =
+                  [ renderAllBlock "=" runtimeNames ]
+                # Prelude.List.map
+                    (List Text)
+                    Text
+                    (renderAllBlock "+=")
+                    extraAllGroups
 
         in  ''
             ${importSection}
 
-            __all__ = [
-            ${allEntries}]
+            ${Prelude.Text.concatSep "\n" allBlocks}
             ''
 
 in  Sdk.Sigs.template Params run /\ { StatementExport, TypeExport }

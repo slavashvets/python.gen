@@ -27,7 +27,6 @@ from tests.typing.psycopg_adapter_runtime import (
     register_adapter_types_sync,
 )
 
-
 REPO_ROOT = Path(__file__).resolve().parents[1]
 STRICT_FIXTURE = REPO_ROOT / "tests" / "typing" / "psycopg_adapter_runtime.py"
 SCHEMA_SQL: LiteralString = """

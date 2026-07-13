@@ -11,8 +11,8 @@ statement function against a throwaway database on the local pg0 instance.
 
 from __future__ import annotations
 
-import asyncio
 import ast
+import asyncio
 import importlib
 import inspect
 import json
@@ -20,8 +20,8 @@ import subprocess
 import sys
 import uuid
 from contextlib import contextmanager
-from decimal import Decimal
 from datetime import date
+from decimal import Decimal
 from pathlib import Path
 
 import psycopg
@@ -191,7 +191,7 @@ def _clear_client_modules() -> None:
 
 
 @contextmanager
-def _client_modules(full_package: Path):  # noqa: ANN202 - dynamic module set
+def _client_modules(full_package: Path):
     src = str(full_package / "src")
     original_path = sys.path.copy()
     sys.path.insert(0, src)
@@ -206,7 +206,7 @@ def _client_modules(full_package: Path):  # noqa: ANN202 - dynamic module set
 
 
 @pytest.fixture
-def client_modules(full_package: Path):  # noqa: ANN202 - dynamic module set
+def client_modules(full_package: Path):
     with _client_modules(full_package) as loaded:
         yield loaded
 
@@ -270,11 +270,12 @@ def test_combined_public_api_identity_and_signatures(full_package: Path) -> None
         parent_sync = source.index("a_codec_wrapper_info = CompositeInfo.fetch")
         assert child_async < parent_async
         assert child_sync < parent_sync
-        assert source.count("from .types.z_codec_payload import ZCodecPayload") == 1
-        assert source.count("from .types.a_codec_wrapper import ACodecWrapper") == 1
+        assert source.count("from . import types as _db_types") == 1
+        assert "_dataclass_callbacks(_db_types.ZCodecPayload)" in source
+        assert "_dataclass_callbacks(_db_types.ACodecWrapper)" in source
 
 
-def test_roundtrip_type_mappings(client_modules, roundtrip_db: str) -> None:  # noqa: ANN001
+def test_roundtrip_type_mappings(client_modules, roundtrip_db: str) -> None:
     """INSERT then SELECT through the generated client, asserting the mappings.
 
     Exercises every generated statement and the full type surface: enum param +
@@ -442,9 +443,7 @@ def test_roundtrip_type_mappings(client_modules, roundtrip_db: str) -> None:  # 
             # jsonb containment param + the literal-`%` ILIKE branch (title_like=None).
             search_all = await facade.search_specimens(conn, title_like=None, meta_filter={}, label=None)
             assert [r.id for r in search_all] == [specimen_id]
-            search_hit = await facade.search_specimens(
-                conn, title_like="alp%", meta_filter={}, label="specimen"
-            )
+            search_hit = await facade.search_specimens(conn, title_like="alp%", meta_filter={}, label="specimen")
             assert [r.id for r in search_hit] == [specimen_id]
             assert isinstance(search_hit[0].meta, dict)
 
@@ -501,15 +500,11 @@ def test_statement_modules_use_psycopg_row_factories(generated_tree: Path) -> No
             row_factory_calls = [
                 node
                 for node in ast.walk(tree)
-                if isinstance(node, ast.Call)
-                and isinstance(node.func, ast.Name)
-                and node.func.id == "_args_row"
+                if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == "_args_row"
             ]
             assert len(row_factory_calls) == 2
             assert all(
-                len(call.args) == 1
-                and isinstance(call.args[0], ast.Name)
-                and call.args[0].id == row_name
+                len(call.args) == 1 and isinstance(call.args[0], ast.Name) and call.args[0].id == row_name
                 for call in row_factory_calls
             )
 
@@ -523,7 +518,7 @@ def test_statement_modules_use_psycopg_row_factories(generated_tree: Path) -> No
     assert "from .mood import Mood" in wrapper_source
 
 
-def test_custom_rows_use_qualified_annotations(client_modules) -> None:  # noqa: ANN001
+def test_custom_rows_use_qualified_annotations(client_modules) -> None:
     _, _, import_module = client_modules
     statement = import_module("specimen_client._generated.statements.insert_specimen")
     source = Path(statement.__file__).read_text()
@@ -534,11 +529,11 @@ def test_custom_rows_use_qualified_annotations(client_modules) -> None:  # noqa:
     assert "codec_payload: _db_types.ZCodecPayload" in source
     assert "codec_payloads: list[_db_types.ZCodecPayload | None]" in source
     assert "_args_row(InsertSpecimenRow)" in source
-    assert '.pg_decode(' not in source
-    assert '.pg_encode(' not in source
+    assert ".pg_decode(" not in source
+    assert ".pg_encode(" not in source
 
 
-def test_roundtrip_sync_surface(client_modules, roundtrip_db: str) -> None:  # noqa: ANN001
+def test_roundtrip_sync_surface(client_modules, roundtrip_db: str) -> None:
     """Drive the additive sync public facade end to end."""
     _apply_migrations(roundtrip_db)
     _, facade, _ = client_modules
@@ -638,7 +633,7 @@ def test_roundtrip_sync_surface(client_modules, roundtrip_db: str) -> None:  # n
         conn.close()
 
 
-def test_roundtrip_single_field_composite(client_modules, roundtrip_db: str) -> None:  # noqa: ANN001
+def test_roundtrip_single_field_composite(client_modules, roundtrip_db: str) -> None:
     """Regression test for compositeBind on a one-field composite.
 
     concatMapSep joins a single-element field list with no separator, so an
@@ -672,7 +667,7 @@ def test_roundtrip_single_field_composite(client_modules, roundtrip_db: str) -> 
     asyncio.run(scenario())
 
 
-def test_roundtrip_single_field_composite_sync(client_modules, roundtrip_db: str) -> None:  # noqa: ANN001
+def test_roundtrip_single_field_composite_sync(client_modules, roundtrip_db: str) -> None:
     """Sync public-facade counterpart of the one-field composite regression."""
     _apply_migrations(roundtrip_db)
     _, facade, _ = client_modules

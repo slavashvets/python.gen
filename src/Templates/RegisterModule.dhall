@@ -14,10 +14,6 @@ let CustomType =
 
 let Params = { customTypes : List CustomType, emitSync : Bool }
 
-let classImport =
-      \(custom : CustomType) ->
-        "from .types.${custom.moduleName} import ${custom.typeName}"
-
 let pgNameConstant =
       \(custom : CustomType) -> "_${custom.moduleName}_pg_name"
 
@@ -38,7 +34,7 @@ let metadata =
               , Composite =
                     constant
                   ++ "\n"
-                  ++ "${makeObjectName custom}, ${makeSequenceName custom} = _dataclass_callbacks(${custom.typeName})"
+                  ++ "${makeObjectName custom}, ${makeSequenceName custom} = _dataclass_callbacks(_db_types.${custom.typeName})"
               }
               custom.kind
 
@@ -55,8 +51,8 @@ let registration =
                   ++ "    register_enum(\n"
                   ++ "        ${infoName},\n"
                   ++ "        conn,\n"
-                  ++ "        ${custom.typeName},\n"
-                  ++ "        mapping={member: member.value for member in ${custom.typeName}},\n"
+                  ++ "        _db_types.${custom.typeName},\n"
+                  ++ "        mapping={member: member.value for member in _db_types.${custom.typeName}},\n"
                   ++ "    )"
               , Composite =
                     "    ${infoName} = ${awaitKw}CompositeInfo.fetch(conn, ${pgNameConstant custom})\n"
@@ -65,7 +61,7 @@ let registration =
                   ++ "    register_composite(\n"
                   ++ "        ${infoName},\n"
                   ++ "        conn,\n"
-                  ++ "        ${custom.typeName},\n"
+                  ++ "        _db_types.${custom.typeName},\n"
                   ++ "        make_object=${makeObjectName custom},\n"
                   ++ "        make_sequence=${makeSequenceName custom},\n"
                   ++ "    )"
@@ -88,13 +84,6 @@ let run =
                 ( \(custom : CustomType) ->
                     merge { Enum = True, Composite = False } custom.kind
                 )
-                params.customTypes
-
-        let classImports =
-              Prelude.Text.concatMapSep
-                "\n"
-                CustomType
-                classImport
                 params.customTypes
 
         let metadataLines =
@@ -129,28 +118,28 @@ let run =
                     import keyword
                     from collections.abc import Callable, Sequence
                     from dataclasses import fields, is_dataclass
-                    from typing import Any, TypeVar
+                    from typing import Any
                     ''
               else  ""
 
-        let adapterImports =
-                ( if    hasComposites
-                  then  "from psycopg.types.composite import CompositeInfo, register_composite\n"
-                  else  ""
-                )
-              ++  ( if    hasEnums
-                    then  "from psycopg.types.enum import EnumInfo, register_enum\n"
-                    else  ""
+        let adapterImportLines =
+                  ( if    hasComposites
+                    then  [ "from psycopg.types.composite import CompositeInfo, register_composite" ]
+                    else  [] : List Text
                   )
+                # ( if    hasEnums
+                    then  [ "from psycopg.types.enum import EnumInfo, register_enum" ]
+                    else  [] : List Text
+                  )
+
+        let adapterImports = Prelude.Text.concatSep "\n" adapterImportLines
 
         let compositeCallbacks =
               if    hasComposites
               then  ''
 
-
-                    _T = TypeVar("_T")
-                    _ObjectMaker = Callable[[Sequence[Any], CompositeInfo], _T]
-                    _SequenceMaker = Callable[[_T, CompositeInfo], Sequence[Any]]
+                    type _ObjectMaker[T] = Callable[[Sequence[Any], CompositeInfo], T]
+                    type _SequenceMaker[T] = Callable[[T, CompositeInfo], Sequence[Any]]
 
 
                     def _python_name(name: str) -> str:
@@ -159,20 +148,20 @@ let run =
                         return name
 
 
-                    def _dataclass_callbacks(cls: type[_T]) -> tuple[_ObjectMaker[_T], _SequenceMaker[_T]]:
+                    def _dataclass_callbacks[T](cls: type[T]) -> tuple[_ObjectMaker[T], _SequenceMaker[T]]:
                         if not is_dataclass(cls):
                             raise TypeError(f"{cls.__name__} must be a dataclass")
 
                         model_fields = fields(cls)
                         model_names = tuple(field.name for field in model_fields)
 
-                        def make_object(values: Sequence[Any], info: CompositeInfo) -> _T:
+                        def make_object(values: Sequence[Any], info: CompositeInfo) -> T:
                             names = tuple(_python_name(name) for name in info.field_names)
                             assert names == model_names
                             assert len(values) == len(model_fields)
                             return cls(**dict(zip(names, values, strict=True)))
 
-                        def make_sequence(obj: _T, info: CompositeInfo) -> Sequence[Any]:
+                        def make_sequence(obj: T, info: CompositeInfo) -> Sequence[Any]:
                             names = tuple(_python_name(name) for name in info.field_names)
                             assert names == model_names
                             return tuple(getattr(obj, field.name) for field in model_fields)
@@ -186,6 +175,7 @@ let run =
               then  ''
 
 
+
                     def register_types_sync(conn: Connection[object]) -> None:
                     ${syncRegistrations}''
               else  ""
@@ -197,9 +187,8 @@ let run =
             ${connectionImport}
             ${adapterImports}
 
-            ${classImports}
+            from . import types as _db_types
             ${compositeCallbacks}
-
 
             ${metadataLines}
 

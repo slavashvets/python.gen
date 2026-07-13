@@ -108,27 +108,31 @@ let renderImports
                 # (if params.emitSync then [ syncSurface.connType ] else [] : List Text)
 
         let psycopgBlock =
-                  [ "from psycopg import " ++ Prelude.Text.concatSep ", " connectionNames ]
-                # importLineIf
-                    rowIsPresent
-                    "from psycopg.rows import args_row as _args_row"
-                # importLineIf
-                    imports.json
-                    "from psycopg.types.json import Json"
-                # importLineIf
-                    imports.jsonb
-                    "from psycopg.types.json import Jsonb"
+              let jsonNames =
+                        importLineIf imports.json "Json"
+                      # importLineIf imports.jsonb "Jsonb"
+
+              let jsonImport =
+                    if    Prelude.List.null Text jsonNames
+                    then  [] : List Text
+                    else  [ "from psycopg.types.json import " ++ Prelude.Text.concatSep ", " jsonNames ]
+
+              in    [ "from psycopg import " ++ Prelude.Text.concatSep ", " connectionNames ]
+                  # importLineIf
+                      rowIsPresent
+                      "from psycopg.rows import args_row as _args_row"
+                  # jsonImport
 
         let localBlock =
-                  coreImport asyncSurface.corePrefix imports.jsonValue
+                  importLineIf
+                    (ImportSet.hasCustom imports)
+                    "from .. import types as _db_types"
+                # coreImport asyncSurface.corePrefix imports.jsonValue
                 # [ runtimeImport asyncSurface params.helperName ]
                 # ( if    params.emitSync
                     then  [ runtimeImport syncSurface params.helperName ]
                     else  [] : List Text
                   )
-                # importLineIf
-                    (ImportSet.hasCustom imports)
-                    "from .. import types as _db_types"
 
         let groups =
               [ [ "from __future__ import annotations" ]

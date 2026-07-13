@@ -103,9 +103,7 @@ def test_json_array_param_fails_loudly(pgn_bin: str, pgn_admin_url: str, tmp_pat
 
     # A jsonb[] param has no faithful psycopg bind (Jsonb wraps a scalar, not
     # element-wise); the generator must reject it, not emit an unwrapped list.
-    _ = (project / "queries" / "probe_json_array.sql").write_text(
-        "SELECT cardinality($payloads::jsonb []) AS n\n"
-    )
+    _ = (project / "queries" / "probe_json_array.sql").write_text("SELECT cardinality($payloads::jsonb []) AS n\n")
 
     result = run_pgn(pgn_bin, pgn_admin_url, project, "generate")
 
@@ -132,16 +130,9 @@ def _write_contract_probe(
     lookup = {
         "absent": "CustomKind.TypeKind.Absent",
         "enum": "CustomKind.TypeKind.Enum 0",
-        "composite": (
-            "CustomKind.TypeKind.Composite "
-            "{ fields = [] : List CustomKind.CompositeField, order = 0 }"
-        ),
+        "composite": ("CustomKind.TypeKind.Composite { fields = [] : List CustomKind.CompositeField, order = 0 }"),
     }[lookup_kind]
-    target_input = (
-        "customType"
-        if nested
-        else "member"
-    )
+    target_input = "customType" if nested else "member"
     custom_type = (
         """
         let customType
@@ -388,9 +379,7 @@ def test_custom_shape_contracts_succeed(
     assert result.returncode == 0, f"expected {case_id} to succeed:\n{_combined_output(result)}"
 
 
-def test_skip_unsupported_drops_offending_units_and_cascades(
-    pgn_bin: str, pgn_admin_url: str, tmp_path: Path
-) -> None:
+def test_skip_unsupported_drops_offending_units_and_cascades(pgn_bin: str, pgn_admin_url: str, tmp_path: Path) -> None:
     """onUnsupported: Skip drops only the smallest self-consistent unit.
 
     Three independent failures in one project: a money result column and a
@@ -420,12 +409,8 @@ def test_skip_unsupported_drops_offending_units_and_cascades(
     _write_single_artifact(project, "../../src/package.dhall", "skip-cascade", "Skip")
 
     _ = (project / "queries" / "probe_unsupported.sql").write_text("SELECT 1::money AS amount\n")
-    _ = (project / "queries" / "probe_json_array.sql").write_text(
-        "SELECT cardinality($payloads::jsonb []) AS n\n"
-    )
-    _ = (project / "queries" / "probe_custom_only.sql").write_text(
-        "SELECT 'happy'::mood AS feeling\n"
-    )
+    _ = (project / "queries" / "probe_json_array.sql").write_text("SELECT cardinality($payloads::jsonb []) AS n\n")
+    _ = (project / "queries" / "probe_custom_only.sql").write_text("SELECT 'happy'::mood AS feeling\n")
     _ = (project / "migrations" / "2.sql").write_text(
         "create type z_bad_leaf as (\n"
         "  feelings mood[]\n"
@@ -444,9 +429,7 @@ def test_skip_unsupported_drops_offending_units_and_cascades(
         "  wrapped a_bad_grandparent not null\n"
         ");\n"
     )
-    _ = (project / "queries" / "probe_nested_composite.sql").write_text(
-        "SELECT wrapped FROM nested_probe LIMIT 1\n"
-    )
+    _ = (project / "queries" / "probe_nested_composite.sql").write_text("SELECT wrapped FROM nested_probe LIMIT 1\n")
 
     result = run_pgn(pgn_bin, pgn_admin_url, project, "generate")
     assert result.returncode == 0, f"Skip mode must still succeed:\n{result.stdout}\n{result.stderr}"
@@ -473,7 +456,7 @@ def test_skip_unsupported_drops_offending_units_and_cascades(
     for name in ("z_bad_leaf", "m_bad_parent", "a_bad_grandparent"):
         assert not (src / "types" / f"{name}.py").exists(), f"{name} should have been skipped"
 
-    for name in kept_statements + ["probe_custom_only"]:
+    for name in [*kept_statements, "probe_custom_only"]:
         assert (src / "statements" / f"{name}.py").is_file(), f"{name} should not have been skipped"
     for name in ("a_codec_wrapper", "mood", "point_2_d", "tag_value", "z_codec_payload"):
         assert (src / "types" / f"{name}.py").is_file(), f"{name} should not have been skipped"
@@ -545,13 +528,9 @@ def test_statement_custom_types_use_one_qualified_namespace_import() -> None:
     namespace_import = "from .. import types as _db_types"
     for module in statements.glob("*.py"):
         source = module.read_text()
-        assert not re.search(r"^from \.\.types\.", source, re.MULTILINE), (
-            f"direct custom type import in {module}"
-        )
+        assert not re.search(r"^from \.\.types\.", source, re.MULTILINE), f"direct custom type import in {module}"
         if "_db_types." in source:
-            assert source.count(namespace_import) == 1, (
-                f"expected one custom type namespace import in {module}"
-            )
+            assert source.count(namespace_import) == 1, f"expected one custom type namespace import in {module}"
 
     insert_specimen = (statements / "insert_specimen.py").read_text()
     for annotation in (

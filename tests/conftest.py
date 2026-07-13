@@ -83,8 +83,7 @@ def roundtrip_db(pgn_admin_url: str) -> Iterator[str]:
         admin = psycopg.connect(pgn_admin_url, autocommit=True)
         try:
             terminate = (
-                "SELECT pg_terminate_backend(pid) FROM pg_stat_activity "
-                "WHERE datname = %s AND pid <> pg_backend_pid()"
+                "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = %s AND pid <> pg_backend_pid()"
             )
             _ = admin.execute(terminate.encode(), (name,))
             ensure_droppable(name)

@@ -4,7 +4,7 @@ import keyword
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, fields, is_dataclass
 from enum import StrEnum
-from typing import Any, LiteralString, TypeVar
+from typing import Any, LiteralString
 
 from psycopg import AsyncConnection, Connection
 from psycopg.rows import BaseRowFactory, args_row
@@ -67,9 +67,8 @@ class SanitizedRow:
     value: Leaf
 
 
-_T = TypeVar("_T")
-_ObjectMaker = Callable[[Sequence[Any], CompositeInfo], _T]
-_SequenceMaker = Callable[[_T, CompositeInfo], Sequence[Any]]
+type _ObjectMaker[T] = Callable[[Sequence[Any], CompositeInfo], T]
+type _SequenceMaker[T] = Callable[[T, CompositeInfo], Sequence[Any]]
 
 
 def _python_name(name: str) -> str:
@@ -79,20 +78,20 @@ def _python_name(name: str) -> str:
     return name
 
 
-def dataclass_callbacks(cls: type[_T]) -> tuple[_ObjectMaker[_T], _SequenceMaker[_T]]:
+def dataclass_callbacks[T](cls: type[T]) -> tuple[_ObjectMaker[T], _SequenceMaker[T]]:
     if not is_dataclass(cls):
         raise TypeError(f"{cls.__name__} must be a dataclass")
 
     model_fields = fields(cls)
     model_names = tuple(field.name for field in model_fields)
 
-    def make_object(values: Sequence[Any], info: CompositeInfo) -> _T:
+    def make_object(values: Sequence[Any], info: CompositeInfo) -> T:
         names = tuple(_python_name(name) for name in info.field_names)
         assert names == model_names
         assert len(values) == len(model_fields)
         return cls(**dict(zip(names, values, strict=True)))
 
-    def make_sequence(obj: _T, info: CompositeInfo) -> Sequence[Any]:
+    def make_sequence(obj: T, info: CompositeInfo) -> Sequence[Any]:
         names = tuple(_python_name(name) for name in info.field_names)
         assert names == model_names
         return tuple(getattr(obj, field.name) for field in model_fields)
@@ -173,12 +172,12 @@ def register_adapter_types_sync(conn: Connection[object]) -> None:
     assert wrapper_info.python_type is Wrapper
 
 
-async def fetch_one_async(
+async def fetch_one_async[T](
     conn: AsyncConnection[object],
     sql: LiteralString,
     params: Mapping[str, object],
-    row_factory: BaseRowFactory[_T],
-) -> _T:
+    row_factory: BaseRowFactory[T],
+) -> T:
     async with conn.cursor(row_factory=row_factory) as cursor:
         await cursor.execute(sql, params)
         row = await cursor.fetchone()
@@ -187,12 +186,12 @@ async def fetch_one_async(
     return row
 
 
-def fetch_one_sync(
+def fetch_one_sync[T](
     conn: Connection[object],
     sql: LiteralString,
     params: Mapping[str, object],
-    row_factory: BaseRowFactory[_T],
-) -> _T:
+    row_factory: BaseRowFactory[T],
+) -> T:
     with conn.cursor(row_factory=row_factory) as cursor:
         cursor.execute(sql, params)
         row = cursor.fetchone()
@@ -203,22 +202,12 @@ def fetch_one_sync(
 
 async def prove_async_row_inference(conn: AsyncConnection[object]) -> None:
     enum_row: EnumRow = await fetch_one_async(conn, "SELECT NULL", {}, args_row(EnumRow))
-    enum_array_row: EnumArrayRow = await fetch_one_async(
-        conn, "SELECT NULL", {}, args_row(EnumArrayRow)
-    )
-    enum_grid_row: EnumGridRow = await fetch_one_async(
-        conn, "SELECT NULL", {}, args_row(EnumGridRow)
-    )
+    enum_array_row: EnumArrayRow = await fetch_one_async(conn, "SELECT NULL", {}, args_row(EnumArrayRow))
+    enum_grid_row: EnumGridRow = await fetch_one_async(conn, "SELECT NULL", {}, args_row(EnumGridRow))
     leaf_row: LeafRow = await fetch_one_async(conn, "SELECT NULL", {}, args_row(LeafRow))
-    leaf_array_row: LeafArrayRow = await fetch_one_async(
-        conn, "SELECT NULL", {}, args_row(LeafArrayRow)
-    )
-    wrapper_row: WrapperRow = await fetch_one_async(
-        conn, "SELECT NULL", {}, args_row(WrapperRow)
-    )
-    sanitized_row: SanitizedRow = await fetch_one_async(
-        conn, "SELECT NULL, NULL", {}, args_row(SanitizedRow)
-    )
+    leaf_array_row: LeafArrayRow = await fetch_one_async(conn, "SELECT NULL", {}, args_row(LeafArrayRow))
+    wrapper_row: WrapperRow = await fetch_one_async(conn, "SELECT NULL", {}, args_row(WrapperRow))
+    sanitized_row: SanitizedRow = await fetch_one_async(conn, "SELECT NULL, NULL", {}, args_row(SanitizedRow))
     _ = (
         enum_row,
         enum_array_row,
@@ -237,9 +226,7 @@ def prove_sync_row_inference(conn: Connection[object]) -> None:
     leaf_row: LeafRow = fetch_one_sync(conn, "SELECT NULL", {}, args_row(LeafRow))
     leaf_array_row: LeafArrayRow = fetch_one_sync(conn, "SELECT NULL", {}, args_row(LeafArrayRow))
     wrapper_row: WrapperRow = fetch_one_sync(conn, "SELECT NULL", {}, args_row(WrapperRow))
-    sanitized_row: SanitizedRow = fetch_one_sync(
-        conn, "SELECT NULL, NULL", {}, args_row(SanitizedRow)
-    )
+    sanitized_row: SanitizedRow = fetch_one_sync(conn, "SELECT NULL, NULL", {}, args_row(SanitizedRow))
     _ = (
         enum_row,
         enum_array_row,

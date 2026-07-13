@@ -10,6 +10,3 @@ dependencies = ["psycopg>=3.3,<4"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/specimen_client"]
-
-[tool.ruff]
-exclude = ["src/specimen_client/_generated"]

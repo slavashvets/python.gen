@@ -5,34 +5,33 @@ let content =
       ''
       from __future__ import annotations
 
-      from typing import LiteralString, TypeVar
+      from typing import LiteralString
 
       from psycopg import AsyncConnection
       from psycopg.rows import BaseRowFactory
 
       from ._core import NoRowError
 
-      _T = TypeVar("_T")
       _Params = dict[str, object]
 
 
-      async def fetch_optional(
+      async def fetch_optional[T](
           conn: AsyncConnection[object],
           sql: LiteralString,
           params: _Params,
-          row_factory: BaseRowFactory[_T],
-      ) -> _T | None:
+          row_factory: BaseRowFactory[T],
+      ) -> T | None:
           async with conn.cursor(row_factory=row_factory) as cur:
               _ = await cur.execute(sql, params)
               return await cur.fetchone()
 
 
-      async def fetch_single(
+      async def fetch_single[T](
           conn: AsyncConnection[object],
           sql: LiteralString,
           params: _Params,
-          row_factory: BaseRowFactory[_T],
-      ) -> _T:
+          row_factory: BaseRowFactory[T],
+      ) -> T:
           async with conn.cursor(row_factory=row_factory) as cur:
               _ = await cur.execute(sql, params)
               row = await cur.fetchone()
@@ -41,12 +40,12 @@ let content =
           return row
 
 
-      async def fetch_many(
+      async def fetch_many[T](
           conn: AsyncConnection[object],
           sql: LiteralString,
           params: _Params,
-          row_factory: BaseRowFactory[_T],
-      ) -> list[_T]:
+          row_factory: BaseRowFactory[T],
+      ) -> list[T]:
           async with conn.cursor(row_factory=row_factory) as cur:
               _ = await cur.execute(sql, params)
               return await cur.fetchall()
@@ -76,34 +75,33 @@ let syncContent =
       ''
       from __future__ import annotations
 
-      from typing import LiteralString, TypeVar
+      from typing import LiteralString
 
       from psycopg import Connection
       from psycopg.rows import BaseRowFactory
 
       from .._core import NoRowError
 
-      _T = TypeVar("_T")
       _Params = dict[str, object]
 
 
-      def fetch_optional(
+      def fetch_optional[T](
           conn: Connection[object],
           sql: LiteralString,
           params: _Params,
-          row_factory: BaseRowFactory[_T],
-      ) -> _T | None:
+          row_factory: BaseRowFactory[T],
+      ) -> T | None:
           with conn.cursor(row_factory=row_factory) as cur:
               _ = cur.execute(sql, params)
               return cur.fetchone()
 
 
-      def fetch_single(
+      def fetch_single[T](
           conn: Connection[object],
           sql: LiteralString,
           params: _Params,
-          row_factory: BaseRowFactory[_T],
-      ) -> _T:
+          row_factory: BaseRowFactory[T],
+      ) -> T:
           with conn.cursor(row_factory=row_factory) as cur:
               _ = cur.execute(sql, params)
               row = cur.fetchone()
@@ -112,12 +110,12 @@ let syncContent =
           return row
 
 
-      def fetch_many(
+      def fetch_many[T](
           conn: Connection[object],
           sql: LiteralString,
           params: _Params,
-          row_factory: BaseRowFactory[_T],
-      ) -> list[_T]:
+          row_factory: BaseRowFactory[T],
+      ) -> list[T]:
           with conn.cursor(row_factory=row_factory) as cur:
               _ = cur.execute(sql, params)
               return cur.fetchall()
