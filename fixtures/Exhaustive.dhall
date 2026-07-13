@@ -18,6 +18,8 @@ let Gen = ../src/package.dhall
 
 let OnUnsupported = ../src/Structures/OnUnsupported.dhall
 
+let PythonNameMapping = ../src/Structures/PythonNameMapping.dhall
+
 let project = Sdk.Fixtures.Exhaustive
 
 let config =
@@ -25,6 +27,8 @@ let config =
         { packageName = None Text
         , emitSync = Some False
         , onUnsupported = Some OnUnsupported.Mode.Skip
+        , queryNameMappings = None (List PythonNameMapping.Query)
+        , customTypeNameMappings = None (List PythonNameMapping.CustomType)
         }
 
 in  Sdk.Output.toFileMap (Gen.compile config project)
