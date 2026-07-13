@@ -2,8 +2,8 @@
 
 This brief records the current status of three upstream integration points.
 The pgn annotation-metadata and warning-surfacing issues are closed and shipped.
-Only the gen-sdk request for a stable custom-type kind or identifier remains
-actionable. Architecture details stay in `DESIGN.md`.
+Only the custom-type identity request remains actionable. Architecture details
+stay in `DESIGN.md`.
 
 ## 1. pgn annotation metadata: resolved
 
@@ -24,7 +24,7 @@ With `onUnsupported: Skip`, the generator retains a report for every dropped
 unit while fixed-point filtering removes unsupported custom types, their
 dependents, and affected statements. See `DESIGN.md`, section 8.
 
-## 3. gen-sdk stable custom kind or identifier: actionable
+## 3. Preserve qualified custom-type identity: actionable
 
 Project-wide custom-type lookup classifies every custom reference as an enum,
 composite, or absent. Shipped models are pure declarations with no class
@@ -35,12 +35,24 @@ registration. See `DESIGN.md`, sections 3, 5, and 8.
 `Interpreters/Project.dhall` currently implements `buildLookup` by comparing a
 custom reference's snake-case name with each project custom type through
 `Text/equal`. This local lookup is the generator's sole need for that
-pgn-specific builtin.
+pgn-specific builtin, but the unqualified comparison also exposes an upstream
+identity gap.
 
-The upstream ask is a stable `kind` tag or identifier on `Scalar.Custom`, such
-as a `Natural` project index, so the lookup can use an equality-free structural
-match. That would remove the local `Text/equal` dependency described in
-`DESIGN.md`, section 10.
+With pgn 0.9.1, a project containing `alpha.status` and `beta.status` can arrive
+with only one `customTypes` entry, while both uses are represented by the same
+unqualified `Scalar.Custom Name`. A Python mapping cannot recover the discarded
+schema or safely repair annotations and adapter registration.
+
+The upstream ask has two inseparable parts:
+
+1. Preserve every schema-qualified custom type in `Project.customTypes`.
+2. Put a stable qualified identifier on `Scalar.Custom`, for example a project
+   index whose target retains schema and PostgreSQL name.
+
+That identifier may also carry a stable kind tag, but a kind without identity is
+not enough. The qualified reference lets lookup use an equality-free structural
+match and removes the local `Text/equal` dependency described in `DESIGN.md`,
+section 10.
 
 Changing `Scalar.Custom` affects gen-sdk consumers. This repository pins its
 gen-sdk import by sha256, so adopting such a change would require an explicit

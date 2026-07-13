@@ -43,6 +43,8 @@ freeze key machine-specific; pgn project configuration does not accept a
 | `packageName` | `Text` | project name in kebab case |
 | `emitSync` | `Bool` | `False` |
 | `onUnsupported` | `"Fail" \| "Skip"` | `"Fail"` |
+| `queryNameMappings` | typed query-name mappings | `[]` |
+| `customTypeNameMappings` | typed PostgreSQL type-name mappings | `[]` |
 
 The `config` block and every field are optional. An omitted or `null` field uses
 its default. Omitting `emitSync`, setting it to `null`, or setting it to `false`
@@ -56,6 +58,48 @@ canonical statement module. `packageName` becomes an import name by replacing
 unsupported custom type, its dependent custom types and statements, and every
 affected facade, registration, and statement entry until the survivors are a
 strict-importable fixed point.
+
+Generated Python namespaces are audited before files are rendered. Collisions
+fail loudly instead of overwriting a file or receiving an order-dependent
+numeric suffix. An intentional public rename uses one typed mapping for the
+entity's snake-case module/function name and Pascal-case Row/type name:
+
+```yaml
+queryNameMappings:
+  - source: sync_query
+    target:
+      snakeCase: synchronize
+      pascalCase: Synchronize
+customTypeNameMappings:
+  - source:
+      schema: public
+      name: json_value
+    target:
+      snakeCase: pg_json_value
+      pascalCase: PgJsonValue
+```
+
+Mapping sources must identify an existing query or exact PostgreSQL schema/type
+pair. A query source is pgn's snake-case query name; a custom-type source is the
+exact PostgreSQL schema and type name preserved in the input contract. Targets
+are final Python names: invalid or reserved targets are rejected, and
+PostgreSQL names remain unchanged.
+`PgJsonValue` above is a user-chosen Python alias for `public.json_value`, not a
+built-in type or automatic naming rule.
+
+pgn 0.9.1 does not preserve two custom types that share one unqualified name
+across schemas: it can retain only one `customTypes` entry, while
+`Scalar.Custom` carries only an unqualified `Name`. A mapping cannot recover a
+schema-qualified identity missing from the contract. Avoid that database shape
+until upstream preserves every schema-qualified type and a stable qualified
+reference; if a future input contains two entries with the same unqualified
+contract `Name`, this generator rejects it as ambiguous.
+
+Local parameter, result-field, composite-field, and enum-member audits are
+defensive for names that reach the generator. pgn may reject a conflicting SQL
+or schema spelling earlier. Such a conflict is resolved at its SQL or schema
+source; the entity mappings above do not apply. See
+[ADR 0001](docs/adr/0001-generated-python-name-collisions.md).
 
 ## Generated package
 
@@ -216,7 +260,7 @@ mise run test
 
 The harness drives real pgn subprocesses against a live PostgreSQL server and
 only creates and drops its own scratch databases. Set `PGN_TEST_DATABASE_URL`
-for a non-default server. The full verified suite is 49 passed and 0 skipped;
+for a non-default server. The full verified suite is 73 passed and 0 skipped;
 it includes byte-for-byte golden comparison, async and sync round trips,
 basedpyright strict, Ruff, generated-quality budgets, unsupported-type modes,
 and public identity checks.

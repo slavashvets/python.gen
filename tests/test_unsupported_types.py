@@ -129,9 +129,16 @@ def _write_contract_probe(
     )
     lookup = {
         "absent": "CustomKind.TypeKind.Absent",
-        "enum": "CustomKind.TypeKind.Enum 0",
-        "composite": ("CustomKind.TypeKind.Composite { fields = [] : List CustomKind.CompositeField, order = 0 }"),
+        "enum": ('CustomKind.TypeKind.Enum { className = "ProbeValue", moduleName = "probe_value", order = 0 }'),
+        "composite": (
+            "CustomKind.TypeKind.Composite "
+            "{ fields = [] : List CustomKind.CompositeField, "
+            'identity = { className = "ProbeValue", moduleName = "probe_value", order = 0 } }'
+        ),
     }[lookup_kind]
+    custom_type_name_mappings = (
+        ", customTypeNameMappings = [] : List PythonNameMapping.CustomType" if interpreter == "CustomType" else ""
+    )
     target_input = "customType" if nested else "member"
     custom_type = (
         """
@@ -161,6 +168,8 @@ let OnUnsupported = ./Structures/OnUnsupported.dhall
 
 let CustomKind = ./Structures/CustomKind.dhall
 
+let PythonNameMapping = ./Structures/PythonNameMapping.dhall
+
 let Target = ./Interpreters/{interpreter}.dhall
 
 let Config =
@@ -180,6 +189,7 @@ let interpreterConfig =
       , importName = "contract_probe"
       , emitSync = False
       , onUnsupported = OnUnsupported.Mode.Fail
+      {custom_type_name_mappings}
       }}
 
 let run =

@@ -165,6 +165,14 @@ The public Dhall config is:
 { packageName : Optional Text
 , emitSync : Optional Bool
 , onUnsupported : Optional < Fail | Skip >
+, queryNameMappings : Optional
+    (List { source : Text, target : { snakeCase : Text, pascalCase : Text } })
+, customTypeNameMappings : Optional
+    ( List
+        { source : { schema : Text, name : Text }
+        , target : { snakeCase : Text, pascalCase : Text }
+        }
+    )
 }
 ```
 
@@ -174,10 +182,35 @@ The public Dhall config is:
 - `packageName`: project name in kebab case;
 - `emitSync`: `False`;
 - `onUnsupported`: `Fail`.
+- `queryNameMappings`: `[]`;
+- `customTypeNameMappings`: `[]`.
 
 An omitted config block, an omitted field, and a `null` field therefore use the
 same fallback. Async output is present for every value of `emitSync`; only true
 adds sync output.
+
+Source-derived identifiers first receive lexical and reserved-name escaping.
+Typed mappings replace a complete query or custom-type Python identity and must
+already contain exact valid targets. After resolution, project and local
+namespace audits reject duplicate modules, functions, Row classes, custom
+types, facade exports, parameters, fields, and enum members before rendering.
+Each custom-type module also audits its class against the primitive, core, and
+custom dependency symbols it actually imports.
+Fixed core exports remain occupied. The generator never silently overwrites a
+file or assigns an order-dependent numeric suffix; see
+[ADR 0001](docs/adr/0001-generated-python-name-collisions.md).
+
+Custom-type mapping is exact only for entities preserved in the input contract.
+pgn 0.9.1 can collapse same-unqualified-name types across schemas and expose an
+unqualified `Scalar.Custom` reference. The generator cannot reconstruct the
+discarded schema identity from SQL and rejects duplicate unqualified contract
+names if they do reach it. Until upstream preserves all schema-qualified types
+and a stable qualified reference, such database shapes are unsupported.
+
+Local member audits are defensive for inputs that reach the generator. pgn may
+reject a conflicting SQL or schema spelling during analysis first. Local
+conflicts are resolved by renaming that SQL or schema source; whole-entity query
+and custom-type mappings do not apply to members.
 
 `Interpreters/Primitive.dhall` maps pgn union constructors, not signature-file
 strings. Supported scalars are Boolean, integer and OID, floating point,
@@ -321,10 +354,12 @@ available in upstream standard Dhall.
 
 The dependency is pinned and explicit. The complete fixture needs fork-aware
 evaluation solely because it invokes this generator and the local `buildLookup`
-uses `Text/equal`. The upstream exit is a stable custom kind or identifier on
-the contract's custom scalar reference, which would remove the need for text
-equality. Until then, pgn and CI's pinned fork-aware action are the supported
-evaluators.
+uses `Text/equal`. The upstream exit must preserve every schema-qualified
+`customTypes` entry and put a stable qualified identifier, or a project index
+with equivalent identity, on each custom scalar reference. Besides removing
+text equality, that prevents pgn 0.9.1 from collapsing same-unqualified-name
+types across schemas. Until then, pgn and CI's pinned fork-aware action are the
+supported evaluators, and cross-schema duplicate type names are unsupported.
 
 `PyIdent.dhall` uses its separate `Text/replace` marker construction for keyword
 membership. `ImportSet.dhall` uses natural project indexes for equality,
@@ -358,7 +393,7 @@ PostgreSQL with these verdicts:
 - H2 CONFIRM: 25 Python files / 1467 lines / 11 statement files / 801 statement
   lines / 11 SQL.
 - H3 CONFIRM: Ruff 0/0, authored long0, SQL long0, raw output/no postformat.
-- Tests: 49 passed, 0 skipped; pgn 0.9.1; strict basedpyright 0/0.
+- Tests: 73 passed, 0 skipped; pgn 0.9.1; strict basedpyright 0/0.
 
 The H1 round trip covers both connection surfaces and exact cross-facade
 identities. It covers scalar enum, enum arrays including rank 2, scalar

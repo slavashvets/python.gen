@@ -10,6 +10,12 @@ let CustomKind = ../Structures/CustomKind.dhall
 
 let OnUnsupported = ../Structures/OnUnsupported.dhall
 
+let PythonNameMapping = ../Structures/PythonNameMapping.dhall
+
+let PythonNamespace = ../Structures/PythonNamespace.dhall
+
+let PyIdent = ../Structures/PyIdent.dhall
+
 let MemberGen = ./Member.dhall
 
 let EnumModule = ../Templates/EnumModule.dhall
@@ -21,6 +27,7 @@ let Config =
       , importName : Text
       , emitSync : Bool
       , onUnsupported : OnUnsupported.Mode
+      , customTypeNameMappings : List PythonNameMapping.CustomType
       }
 
 let Input = Model.CustomType
@@ -37,6 +44,7 @@ let Output =
       , kind : TypeKind
       , order : Natural
       , dependencies : List Natural
+      , moduleBindings : List PythonNamespace.Binding
       }
 
 let renderExtraImports =
@@ -75,15 +83,109 @@ let renderExtraImports =
               )
             # customLines
 
+let moduleNamespace =
+      \(input : Input) ->
+        "custom type module for schema ${Text/show input.pgSchema}, type ${Text/show input.pgName}"
+
+let moduleBinding =
+      \(namespace : Text) ->
+      \(owner : Text) ->
+      \(name : Text) ->
+        { namespace
+        , owner
+        , name
+        , remediation = "Choose a different custom type name mapping target"
+        }
+
+let enumNamespaceBindings =
+      \(input : Input) ->
+      \(typeName : Text) ->
+        let namespace = moduleNamespace input
+
+        in  [ moduleBinding
+                namespace
+                "custom type class for schema ${Text/show input.pgSchema}, type ${Text/show input.pgName}"
+                typeName
+            , moduleBinding namespace "enum base import" "StrEnum"
+            ]
+
+let compositeNamespaceBindings =
+      \(input : Input) ->
+      \(typeName : Text) ->
+      \(imports : ImportSet.Type) ->
+        let namespace = moduleNamespace input
+
+        let imported =
+                ( if    imports.uuid
+                  then  [ moduleBinding namespace "UUID primitive import" "UUID" ]
+                  else  [] : List PythonNamespace.Binding
+                )
+              # ( if    imports.datetime
+                  then  [ moduleBinding namespace "datetime primitive import" "datetime" ]
+                  else  [] : List PythonNamespace.Binding
+                )
+              # ( if    imports.date
+                  then  [ moduleBinding namespace "date primitive import" "date" ]
+                  else  [] : List PythonNamespace.Binding
+                )
+              # ( if    imports.time
+                  then  [ moduleBinding namespace "time primitive import" "time" ]
+                  else  [] : List PythonNamespace.Binding
+                )
+              # ( if    imports.timedelta
+                  then  [ moduleBinding namespace "timedelta primitive import" "timedelta" ]
+                  else  [] : List PythonNamespace.Binding
+                )
+              # ( if    imports.decimal
+                  then  [ moduleBinding namespace "Decimal primitive import" "Decimal" ]
+                  else  [] : List PythonNamespace.Binding
+                )
+              # ( if    imports.jsonValue
+                  then  [ moduleBinding namespace "generated core import" "JsonValue" ]
+                  else  [] : List PythonNamespace.Binding
+                )
+
+        let customImports =
+              Prelude.List.map
+                ImportSet.CustomImport
+                PythonNamespace.Binding
+                ( \(custom : ImportSet.CustomImport) ->
+                    moduleBinding
+                      namespace
+                      "custom dependency import \".${custom.moduleName}.${custom.className}\""
+                      custom.className
+                )
+                imports.customTypes
+
+        in    [ moduleBinding
+                  namespace
+                  "custom type class for schema ${Text/show input.pgSchema}, type ${Text/show input.pgName}"
+                  typeName
+              , moduleBinding namespace "dataclass decorator import" "dataclass"
+              ]
+            # imported
+            # customImports
+
 let run =
       \(config : Config) ->
       \(lookup : CustomKind.Lookup) ->
       \(input : Input) ->
-        let typeName = input.name.inPascalCase
+        let pythonName =
+              PythonNameMapping.resolveCustomType
+                config.customTypeNameMappings
+                { schema = input.pgSchema, name = input.pgName }
+                { snakeCase = PyIdent.typeModuleSafeName input.name.inSnakeCase
+                , pascalCase = PyIdent.pySafeName input.name.inPascalCase
+                }
 
-        let moduleName = input.name.inSnakeCase
+        let typeName = pythonName.pascalCase
+
+        let moduleName = pythonName.snakeCase
 
         let modulePath = "types/${moduleName}.py"
+
+        let coreConfig =
+              config.{ packageName, importName, emitSync, onUnsupported }
 
         in  merge
               { Enum =
@@ -101,7 +203,7 @@ let run =
 
                     in  merge
                           { Enum =
-                              \(order : Natural) ->
+                              \(identity : CustomKind.Identity) ->
                                 Lude.Compiled.ok
                                   Output
                                   { modulePath
@@ -115,13 +217,15 @@ let run =
                                   , pgSchema = input.pgSchema
                                   , pgName = input.pgName
                                   , kind = TypeKind.Enum
-                                  , order
+                                  , order = identity.order
                                   , dependencies = [] : List Natural
+                                  , moduleBindings =
+                                      enumNamespaceBindings input typeName
                                   }
                           , Composite =
                               \ ( _
                                 : { fields : List CustomKind.CompositeField
-                                  , order : Natural
+                                  , identity : CustomKind.Identity
                                   }
                                 ) ->
                                 Lude.Compiled.report
@@ -146,7 +250,7 @@ let run =
                                 merge
                                   { Primitive =
                                       \(_ : Model.Primitive) ->
-                                        MemberGen.run config lookup m
+                                        MemberGen.run coreConfig lookup m
                                   , Custom =
                                       \(name : Model.Name) ->
                                         Prelude.Optional.fold
@@ -159,7 +263,7 @@ let run =
                                                 [ m.pgName, name.inSnakeCase ]
                                                 "Custom array fields inside a composite type are not supported"
                                           )
-                                          (MemberGen.run config lookup m)
+                                          (MemberGen.run coreConfig lookup m)
                                   }
                                   m.value.scalar
                             )
@@ -201,9 +305,8 @@ let run =
                             in  merge
                                   { Composite =
                                       \ ( composite
-                                        : { fields :
-                                              List CustomKind.CompositeField
-                                          , order : Natural
+                                        : { fields : List CustomKind.CompositeField
+                                          , identity : CustomKind.Identity
                                           }
                                         ) ->
                                         Lude.Compiled.ok
@@ -222,11 +325,16 @@ let run =
                                           , pgSchema = input.pgSchema
                                           , pgName = input.pgName
                                           , kind = TypeKind.Composite
-                                          , order = composite.order
+                                          , order = composite.identity.order
                                           , dependencies
+                                          , moduleBindings =
+                                              compositeNamespaceBindings
+                                              input
+                                              typeName
+                                              combinedImports
                                           }
                                   , Enum =
-                                      \(_ : Natural) ->
+                                      \(_ : CustomKind.Identity) ->
                                         Lude.Compiled.report
                                           Output
                                           [ input.pgName ]

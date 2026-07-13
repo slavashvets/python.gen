@@ -1,5 +1,14 @@
 # Upcoming
 
+- Added fail-loud, namespace-wide validation for generated Python names. Query
+  and custom-type collisions can be resolved with typed, whole-entity mappings;
+  invalid, reserved, duplicate, and unknown mappings are rejected. Defensive
+  local-member audits identify both sources when such names reach the generator;
+  pgn may reject them earlier, and resolution is a SQL or schema rename. The
+  generator never silently overwrites files or assigns numeric suffixes.
+  Per-type module audits also reject a mapped class that would shadow an actual
+  primitive, core, or custom dependency import.
+
 - Finalized one additive package surface. Async functions remain at the package
   root for every configuration. `emitSync: true` adds `<package>.sync`, a sync
   runtime, and adjacent sync functions in the same canonical statement modules.
@@ -22,8 +31,10 @@
 
 - Retained `buildLookup` as the sound project-wide custom-kind resolver. Its
   `Text/equal` use is an explicit pgn-fork constraint; a stable custom kind or
-  identifier in the upstream contract is the planned exit. Natural project
-  indexes now provide deterministic custom-import deduplication and ordering.
+  qualified identifier in the upstream contract is the planned exit. pgn 0.9.1
+  can collapse same-unqualified-name types across schemas, so that database
+  shape remains unsupported and cannot be repaired by a Python mapping. Natural
+  project indexes now provide deterministic custom-import deduplication and ordering.
   Query, parameter, field, and private statement names are collision-safe while
   SQL names remain unchanged.
 
@@ -48,7 +59,7 @@
   class-aware adapters, pure models, canonical `args_row` Rows, and no query
   decoders, model codecs, casts, or bytes SQL. H2 CONFIRM: 25 Python files /
   1467 lines / 11 statement files / 801 statement lines / 11 SQL. H3 CONFIRM:
-  Ruff 0/0, authored long0, SQL long0, raw output/no postformat. Tests: 49
+  Ruff 0/0, authored long0, SQL long0, raw output/no postformat. Tests: 73
   passed, 0 skipped; pgn 0.9.1; strict basedpyright 0/0.
 
 - Migrated the generator to gen-contract v4.0.1 and gen-sdk v2.0.0 using

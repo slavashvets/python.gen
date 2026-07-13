@@ -23,7 +23,11 @@ let Config =
 
 let Input = Model.Member
 
-let Output = { fieldName : Text, pyType : Text, imports : ImportSet.Type }
+let Output =
+      { fieldName : Text
+      , pyType : Text
+      , imports : ImportSet.Type
+      }
 
 let runWithPrefix =
       \(prefix : Text) ->
@@ -40,8 +44,6 @@ let runWithPrefix =
               \(value : Value.Output) ->
                 let nullableSuffix = if input.isNullable then " | None" else ""
 
-                let pyType = Value.qualifyCustom prefix value ++ nullableSuffix
-
                 let baseImports = value.imports
 
                 in  merge
@@ -49,7 +51,7 @@ let runWithPrefix =
                           Lude.Compiled.ok
                             Output
                             { fieldName
-                            , pyType
+                            , pyType = value.pyType ++ nullableSuffix
                             , imports = baseImports
                             }
                       , Custom =
@@ -58,19 +60,16 @@ let runWithPrefix =
                             value.scalar.customRef
                             (Lude.Compiled.Type Output)
                             ( \(name : Model.Name) ->
-                                let typeName = name.inPascalCase
-
-                                let customImport =
-                                      \(order : Natural) ->
-                                        { className = typeName
-                                        , moduleName = name.inSnakeCase
-                                        , order
-                                        }
-
                                 let mkOutput =
+                                      \(identity : CustomKind.Identity) ->
                                       \(customImports : ImportSet.Type) ->
                                         { fieldName
-                                        , pyType
+                                        , pyType =
+                                              Value.qualifyCustom
+                                                prefix
+                                                identity.className
+                                                value
+                                            ++ nullableSuffix
                                         , imports =
                                             ImportSet.combine baseImports customImports
                                         }
@@ -83,15 +82,15 @@ let runWithPrefix =
 
                                 in  merge
                                       { Enum =
-                                          \(order : Natural) ->
+                                          \(identity : CustomKind.Identity) ->
                                             let enumImport =
                                                   ImportSet.customEnum
-                                                    (customImport order)
+                                                    identity
 
                                             in  if dimsAtMostTwo
                                                 then  Lude.Compiled.ok
                                                         Output
-                                                        (mkOutput enumImport)
+                                                        (mkOutput identity enumImport)
                                                 else  Lude.Compiled.report
                                                         Output
                                                         [ input.pgName
@@ -100,17 +99,17 @@ let runWithPrefix =
                                                         "Array of an enum with dimensionality > 2 is not supported"
                                       , Composite =
                                           \ ( composite
-                                            : { fields :
-                                                  List CustomKind.CompositeField
-                                              , order : Natural
+                                            : { fields : List CustomKind.CompositeField
+                                              , identity : CustomKind.Identity
                                               }
                                             ) ->
                                             if dimsAtMostOne
                                             then  Lude.Compiled.ok
                                                     Output
                                                     ( mkOutput
+                                                        composite.identity
                                                         ( ImportSet.customComposite
-                                                            (customImport composite.order)
+                                                            composite.identity
                                                         )
                                                     )
                                             else  Lude.Compiled.report

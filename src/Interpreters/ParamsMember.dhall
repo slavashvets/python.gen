@@ -240,9 +240,8 @@ let run =
 
         let buildOutput =
               \(value : Value.Output) ->
-                let pyType =
-                      Value.qualifyCustom "_db_types." value
-                      ++  (if input.isNullable then " | None" else "")
+                let nullableSuffix =
+                      if input.isNullable then " | None" else ""
 
                 let jsonImport =
                       if    needsJsonbImport
@@ -251,6 +250,7 @@ let run =
 
                 let mkOutput =
                       \(typeImports : ImportSet.Type) ->
+                      \(pyType : Text) ->
                       \(bindExpr : Text) ->
                         { fieldName
                         , pgName = input.pgName
@@ -264,13 +264,6 @@ let run =
                       value.scalar.customRef
                       (Lude.Compiled.Type Output)
                       ( \(name : Model.Name) ->
-                          let customImport =
-                                \(order : Natural) ->
-                                  { className = name.inPascalCase
-                                  , moduleName = name.inSnakeCase
-                                  , order
-                                  }
-
                           let dimsAtMostTwo =
                                 Natural/isZero (Natural/subtract 2 value.dims)
 
@@ -279,10 +272,10 @@ let run =
 
                           in  merge
                                 { Enum =
-                                    \(order : Natural) ->
+                                    \(identity : CustomKind.Identity) ->
                                       let enumImport =
                                             ImportSet.customEnum
-                                              (customImport order)
+                                              identity
 
                                       in  if dimsAtMostTwo
                                           then  Lude.Compiled.ok
@@ -291,6 +284,12 @@ let run =
                                                       ( ImportSet.combine
                                                           value.imports
                                                           enumImport
+                                                      )
+                                                      ( Value.qualifyCustom
+                                                          "_db_types."
+                                                          identity.className
+                                                          value
+                                                        ++ nullableSuffix
                                                       )
                                                       fieldName
                                                   )
@@ -302,9 +301,8 @@ let run =
                                                   "Array of an enum parameter with dimensionality > 2 is not supported"
                                 , Composite =
                                     \ ( composite
-                                      : { fields :
-                                            List CustomKind.CompositeField
-                                        , order : Natural
+                                      : { fields : List CustomKind.CompositeField
+                                        , identity : CustomKind.Identity
                                         }
                                       ) ->
                                       if dimsAtMostOne
@@ -314,8 +312,14 @@ let run =
                                                   ( ImportSet.combine
                                                       value.imports
                                                       ( ImportSet.customComposite
-                                                          (customImport composite.order)
+                                                          composite.identity
                                                       )
+                                                  )
+                                                  ( Value.qualifyCustom
+                                                      "_db_types."
+                                                      composite.identity.className
+                                                      value
+                                                    ++ nullableSuffix
                                                   )
                                                   fieldName
                                               )
@@ -338,7 +342,11 @@ let run =
                                 "json/jsonb array as a parameter is not supported"
                         else  Lude.Compiled.ok
                                 Output
-                                (mkOutput value.imports defaultBind)
+                                ( mkOutput
+                                    value.imports
+                                    (value.pyType ++ nullableSuffix)
+                                    defaultBind
+                                )
                       )
 
         let compiledValue

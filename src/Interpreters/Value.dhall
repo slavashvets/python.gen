@@ -70,8 +70,9 @@ let run =
           (Scalar.run config input.scalar)
 
 let qualifyCustom
-    : Text -> Output -> Text
+    : Text -> Text -> Output -> Text
     = \(prefix : Text) ->
+      \(className : Text) ->
       \(value : Output) ->
         Prelude.Optional.fold
           Model.Name
@@ -80,7 +81,7 @@ let qualifyCustom
           ( \(name : Model.Name) ->
               Text/replace
                 name.inPascalCase
-                (prefix ++ name.inPascalCase)
+                (prefix ++ className)
                 value.pyType
           )
           value.pyType

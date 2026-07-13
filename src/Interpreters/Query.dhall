@@ -14,6 +14,8 @@ let Surface = ../Structures/Surface.dhall
 
 let OnUnsupported = ../Structures/OnUnsupported.dhall
 
+let PythonNameMapping = ../Structures/PythonNameMapping.dhall
+
 let ResultModule = ./Result.dhall
 
 let QueryFragmentsModule = ./QueryFragments.dhall
@@ -27,6 +29,7 @@ let Config =
       , importName : Text
       , emitSync : Bool
       , onUnsupported : OnUnsupported.Mode
+      , queryNameMappings : List PythonNameMapping.Query
       }
 
 let Compiled = Lude.Compiled
@@ -38,7 +41,9 @@ let Input = Model.Query
 -- rowClassName is also surfaced because Project.dhall needs the name for facade
 -- re-exports; the Row's definition remains in this module.
 let Output =
-      { functionName : Text
+      { sourceName : Text
+      , sourcePath : Text
+      , functionName : Text
       , rowClassName : Optional Text
       , modulePath : Text
       , content : Text
@@ -47,14 +52,13 @@ let Output =
 let render =
       \(config : Config) ->
       \(input : Input) ->
+      \(functionName : Text) ->
       \(result : ResultModule.Output) ->
       \(fragments : QueryFragmentsModule.Output) ->
       \(params : List ParamsMember.Output) ->
         -- The function name is also the module filename and facade import name, so
         -- protect both Python syntax and the private globals in a statement module.
         -- SQL/dict/row lookups still key off raw names.
-        let functionName = PyIdent.querySafeName input.name.inSnakeCase
-
         let paramSigLines =
               Prelude.List.map
                 ParamsMember.Output
@@ -117,7 +121,9 @@ let render =
                 , syncSurface = Surface.sync
                 }
 
-        in  { functionName
+        in  { sourceName = input.name.inSnakeCase
+            , sourcePath = input.srcPath
+            , functionName
             , rowClassName
             , modulePath = "statements/${functionName}.py"
             , content
@@ -127,7 +133,18 @@ let run =
       \(config : Config) ->
       \(lookup : CustomKind.Lookup) ->
       \(input : Input) ->
-        let rowClassName = input.name.inPascalCase ++ "Row"
+        let pythonName =
+              PythonNameMapping.resolveQuery
+                config.queryNameMappings
+                input.name.inSnakeCase
+                { snakeCase = PyIdent.querySafeName input.name.inSnakeCase
+                , pascalCase = input.name.inPascalCase
+                }
+
+        let rowClassName = pythonName.pascalCase ++ "Row"
+
+        let coreConfig =
+              config.{ packageName, importName, emitSync, onUnsupported }
 
         in  Compiled.nest
               Output
@@ -137,12 +154,12 @@ let run =
                   QueryFragmentsModule.Output
                   (List ParamsMember.Output)
                   Output
-                  (render config input)
+                  (render config input pythonName.snakeCase)
                   ( Compiled.nest
                       ResultModule.Output
                       "result"
                       ( ResultModule.run
-                          (config /\ { rowClassName })
+                          (coreConfig /\ { rowClassName })
                           lookup
                           input.result
                       )
@@ -150,7 +167,7 @@ let run =
                   ( Compiled.nest
                       QueryFragmentsModule.Output
                       "sql"
-                      (QueryFragmentsModule.run config input.fragments)
+                      (QueryFragmentsModule.run coreConfig input.fragments)
                   )
                   ( Compiled.nest
                       (List ParamsMember.Output)
@@ -162,7 +179,7 @@ let run =
                               Compiled.nest
                                 ParamsMember.Output
                                 member.pgName
-                                (ParamsMember.run config lookup member)
+                                (ParamsMember.run coreConfig lookup member)
                           )
                           input.params
                       )
