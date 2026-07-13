@@ -47,7 +47,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           ref: ${{ inputs.ref || github.sha }}
 
@@ -120,7 +120,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           ref: ${{ inputs.ref || github.sha }}
 
@@ -161,8 +161,8 @@ jobs:
 
           mise exec -- uv venv contract-shell/.venv
           mise exec -- uv pip install --python contract-shell/.venv/bin/python \
-            "psycopg[binary]>=3.3,<4" \
-            "basedpyright==1.39.7" \
+            "psycopg[binary]>=3.3.4,<4" \
+            "basedpyright==1.39.9" \
             "ruff==0.15.20"
 
       - name: Ruff check the generated package

@@ -5,7 +5,7 @@ A Dhall-authored code generator for [pGenie](https://github.com/pgenie-io/pgenie
 strictly typed Python client for psycopg 3.
 
 The generated package has no separately installed generator runtime. Consumers
-must depend on `psycopg>=3.3,<4`; the verified fixture uses psycopg 3.3.4. The
+must depend on `psycopg>=3.3.4,<4`; the verified fixture uses psycopg 3.3.4. The
 rest of the generated imports are from the Python standard library.
 
 ## Quickstart

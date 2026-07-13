@@ -57,7 +57,7 @@
 - Added Ruff check and format gates, authored and SQL line-length gates, raw
   output checks with no postformat step, public identity checks, import-boundary
   checks, adapter AST checks, and async/sync PostgreSQL round trips. Final
-  evidence: H1 CONFIRM with psycopg 3.3.4, consumer `psycopg>=3.3,<4`,
+  evidence: H1 CONFIRM with psycopg 3.3.4, consumer `psycopg>=3.3.4,<4`,
   class-aware adapters, pure models, canonical `args_row` Rows, and no query
   decoders, model codecs, casts, or bytes SQL. H2 CONFIRM: 25 Python files /
   1467 lines / 11 statement files / 801 statement lines / 11 SQL. H3 CONFIRM:

@@ -155,7 +155,7 @@ the same five cardinality helpers:
 Row helpers accept `BaseRowFactory[T]` and return psycopg's constructed object
 directly. Statement SQL is passed as `LiteralString`. No runtime accepts encoded
 SQL bytes. The generated package has no separately installed support library;
-its only non-stdlib consumer dependency is `psycopg>=3.3,<4`.
+its only non-stdlib consumer dependency is `psycopg>=3.3.4,<4`.
 
 ## 5. Configuration, mapping, and unsupported shapes
 
@@ -386,7 +386,7 @@ that point, manual edits are expected to be overwritten.
 The final fixture was regenerated as raw output and verified against live
 PostgreSQL with these verdicts:
 
-- H1 CONFIRM: psycopg 3.3.4; consumer `psycopg>=3.3,<4`;
+- H1 CONFIRM: psycopg 3.3.4; consumer `psycopg>=3.3.4,<4`;
   class-aware `EnumInfo`/`register_enum` and
   `CompositeInfo`/`register_composite`; dependency-first registration; pure
   `StrEnum` and frozen slotted dataclasses; `args_row` constructs canonical Row;
