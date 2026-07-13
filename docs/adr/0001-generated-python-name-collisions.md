@@ -69,6 +69,6 @@ until upstream preserves all qualified custom types and references.
 - Intentional renames are deterministic and propagate through all references.
 - A conflicting source requires either a source-level rename or an explicit
   typed mapping.
-- Mapping configuration is more verbose than automatic suffixing, but its shape
-  is type-checked and represented raw identifiers containing punctuation remain
+- Mapping configuration is more verbose than automatic suffixing, but it is
+  type-checked, and raw identifiers represented in the contract remain
   unambiguous.

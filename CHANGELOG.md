@@ -29,12 +29,14 @@
   ranks, composite ranks, custom-array fields inside composites, and missing or
   unsupported custom types fail loudly.
 
-- Retained `buildLookup` as the sound project-wide custom-kind resolver. Its
-  `Text/equal` use is an explicit pgn-fork constraint; a stable custom kind or
-  qualified identifier in the upstream contract is the planned exit. pgn 0.9.1
-  can collapse same-unqualified-name types across schemas, so that database
-  shape remains unsupported and cannot be repaired by a Python mapping. Natural
-  project indexes now provide deterministic custom-import deduplication and ordering.
+- Retained `buildLookup` as the project-wide custom-kind resolver for identities
+  preserved in the contract. Its `Text/equal` use is an explicit pgn-fork
+  constraint. The planned exit must preserve every schema-qualified custom type
+  entry and expose a stable qualified identifier on `Scalar.Custom`; kind alone
+  is insufficient. pgn 0.9.1 can collapse same-unqualified-name types across
+  schemas, so that database shape remains unsupported and cannot be repaired by
+  a Python mapping. Natural project indexes now provide deterministic
+  custom-import deduplication and ordering.
   Query, parameter, field, and private statement names are collision-safe while
   SQL names remain unchanged.
 

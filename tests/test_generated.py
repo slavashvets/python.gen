@@ -6,7 +6,8 @@
 End to end: validate the fixture pgn project (`pgn analyse`), generate the Python
 client (`pgn generate`), diff it against the committed golden tree, typecheck the
 generated package with basedpyright strict, and round-trip every generated
-statement function against a throwaway database on the local pg0 instance.
+statement function against a uniquely named scratch database on the configured
+PostgreSQL server.
 """
 
 from __future__ import annotations
@@ -282,7 +283,8 @@ def test_roundtrip_type_mappings(client_modules, roundtrip_db: str) -> None:
     enum column decoding to the generated StrEnum, composite param encode +
     column decode to the frozen dataclass, array param via ANY, jsonb param and
     column round-trip, the literal-`%` query, nullable columns as None, and the
-    rows-affected helper. Runs against a throwaway pg0 database.
+    rows-affected helper. Runs against a uniquely named scratch database on the
+    configured PostgreSQL server.
     """
     _apply_migrations(roundtrip_db)
     facade, _, _ = client_modules
@@ -406,18 +408,10 @@ def test_roundtrip_type_mappings(client_modules, roundtrip_db: str) -> None:
             assert isinstance(feeling_rows[0].origin, Point2D)
             assert await facade.list_specimens_by_feeling(conn, feeling=Mood.SAD) == []
 
-            # Array param via ANY. This exercises the nullable-element branch
-            # (list[T | None] | None). NOTE: the generator's non-null-element
-            # branch (list[T]) is not covered by this fixture because the
-            # single-table specimen schema produces no query shape under which pgn
-            # infers element_not_null:true (= ANY and unnest forms against
-            # specimen all yield false), and test_committed_sig_files_match_fresh_analysis
-            # pins every fixture sig to fresh analysis, so a true flag cannot be
-            # committed here. The branch ships in the real client
-            # (documents_have_unpublished_changes, whose unnest-over-FK-join shape
-            # does infer it) and is guarded by checks:pgn-generate plus call-site
-            # type-checking in apps/backend and apps/ingest, which pass list[UUID].
-            # The generated client bodies are not strict-typechecked themselves.
+            # Array param via ANY. This fixture exercises the nullable-element
+            # branch because pgn reports element_not_null:false for its signatures.
+            # Synthetic custom-shape probes exercise elementIsNullable=False, and
+            # the fresh generated package passes basedpyright strict above.
             id_rows = await facade.list_specimens_by_ids(conn, pub_ids=[inserted.pub_id])
             assert [r.pub_id for r in id_rows] == [inserted.pub_id]
             assert await facade.list_specimens_by_ids(conn, pub_ids=[uuid.uuid4()]) == []
@@ -634,13 +628,11 @@ def test_roundtrip_sync_surface(client_modules, roundtrip_db: str) -> None:
 
 
 def test_roundtrip_single_field_composite(client_modules, roundtrip_db: str) -> None:
-    """Regression test for compositeBind on a one-field composite.
+    """Regression for class-aware adaptation of a one-field composite.
 
-    concatMapSep joins a single-element field list with no separator, so an
-    unguarded tuple expression would render "(x.f)": a parenthesized value, not
-    a tuple, which psycopg would try to adapt as the bare field type instead of
-    the composite. Exercises the param bind (insert) and the result-column
-    decode (RETURNING and a plain SELECT).
+    The registered dataclass sequence callback must return a field-ordered
+    one-element tuple, not the bare field value. Exercises parameter adaptation
+    on insert and result adaptation through RETURNING and a plain SELECT.
     """
     _apply_migrations(roundtrip_db)
     facade, _, _ = client_modules

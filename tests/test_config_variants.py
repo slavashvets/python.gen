@@ -2,8 +2,9 @@
 
 pgn's decode behavior for record types is undocumented, so each artifact in
 project1.pgn.yaml drives a different subset of `config` keys through the same
-compile.dhall and the assertions below record what the pinned pgn was observed to
-do, not a documented contract. These variants pin the additive sync surface.
+working-tree `src/package.dhall` entry point. The assertions below record what
+the pinned pgn was observed to do, not a documented contract. These variants
+pin the additive sync surface.
 """
 
 from __future__ import annotations

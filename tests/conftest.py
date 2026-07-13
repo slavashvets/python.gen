@@ -33,9 +33,9 @@ from tests._harness import (
 def pgn_bin() -> str:
     """Absolute path to the mise-managed pgn binary.
 
-    pgn is installed via mise from GitHub releases and is not on PATH outside the
-    monorepo. Resolving it here lets the harness exec it with cwd set to a temp
-    project copy that lives outside the repo.
+    pgn is pinned by this repository's mise config and may not be on the caller's
+    PATH. Resolving it here lets the harness exec it with cwd set to a temporary
+    project copy.
     """
     resolved = shutil.which("pgn")
     if resolved:
@@ -63,7 +63,7 @@ def pgn_admin_url() -> str:
 
 @pytest.fixture
 def roundtrip_db(pgn_admin_url: str) -> Iterator[str]:
-    """A uniquely named throwaway database on pg0, dropped on teardown."""
+    """A uniquely named scratch database on the configured server, dropped on teardown."""
     name = f"pgn_rt_{uuid.uuid4().hex[:12]}"
     admin = psycopg.connect(pgn_admin_url, autocommit=True)
     try:

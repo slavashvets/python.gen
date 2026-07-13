@@ -9,11 +9,9 @@
 -- those statements/types are dropped with a warning instead of aborting the
 -- whole compile.
 --
--- Intended to be executed with:
---
--- ```bash
--- dhall to-directory-tree --file fixtures/Exhaustive.dhall --output <dir> --allow-path-separators
--- ```
+-- CI evaluates this fixture with the pinned fork-aware directory-tree action.
+-- Standard `dhall to-directory-tree` cannot evaluate the pgn fork's Text/equal
+-- builtin used by the generator.
 let Sdk = ../src/Deps/Sdk.dhall
 
 let Gen = ../src/package.dhall
