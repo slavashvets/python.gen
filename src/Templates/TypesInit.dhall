@@ -17,8 +17,13 @@ let run =
                 )
                 params.exports
 
+        let exportSection =
+              if    Prelude.List.null Export params.exports
+              then  ""
+              else  "# isort: off\n${exportLines}\n# isort: on"
+
         in  ''
-            ${exportLines}
+            ${exportSection}
             ''
 
 in  Sdk.Sigs.template Params run /\ { Export }

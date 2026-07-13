@@ -39,6 +39,11 @@ let importBlocks =
           (\(entry : Text) -> importBlock source entry)
           entries
 
+-- Dhall has no Text ordering, so project-ordered imports need an explicit
+-- formatter boundary instead of a comparator that would only handle fixtures.
+let preserveImportOrder =
+      \(block : Text) -> "\n# isort: off\n${block}\n# isort: on"
+
 let rowNames
     : List StatementExport -> List Text
     = \(statements : List StatementExport) ->
@@ -75,6 +80,8 @@ let run =
                 )
                 params.types
 
+        let typeBlock = preserveImportOrder typeBlock
+
         let rows = rowNames params.statements
 
         -- A query's Row class lives in its statement module. Keep the row
@@ -102,6 +109,8 @@ let run =
                           (rowEntries # [ functionEntry ])
                 )
                 params.statements
+
+        let statementBlock = preserveImportOrder statementBlock
 
         let registrationBlock =
               merge
@@ -145,6 +154,15 @@ let run =
                       names
                 ++  "]"
 
+        let renderProjectAllBlock =
+              \(names : List Text) ->
+                    "__all__ += [  # noqa: RUF022, RUF100\n"
+                ++  Prelude.Text.concatMap
+                      Text
+                      (\(name : Text) -> "    \"${name}\",\n")
+                      names
+                ++  "]"
+
         let typeNames =
               Prelude.List.map
                 TypeExport
@@ -169,19 +187,36 @@ let run =
         let syncNames =
               if params.includeSyncModule then [ "sync" ] else [] : List Text
 
-        let extraAllGroups =
+        let projectAllGroups =
               Prelude.List.filter
                 (List Text)
                 (\(group : List Text) -> Prelude.Bool.not (Prelude.List.null Text group))
-                [ typeNames, rows, functionNames, registrationNames, syncNames ]
+                [ typeNames, rows, functionNames ]
+
+        let fixedAllGroups =
+              Prelude.List.filter
+                (List Text)
+                (\(group : List Text) -> Prelude.Bool.not (Prelude.List.null Text group))
+                [ registrationNames, syncNames ]
+
+        let projectAllBlocks =
+              if    Prelude.List.null (List Text) projectAllGroups
+              then  [] : List Text
+              else  [ "# Project order is intentional for public re-export groups." ]
+                  # Prelude.List.map
+                      (List Text)
+                      Text
+                      renderProjectAllBlock
+                      projectAllGroups
 
         let allBlocks =
                   [ renderAllBlock "=" runtimeNames ]
+                # projectAllBlocks
                 # Prelude.List.map
                     (List Text)
                     Text
                     (renderAllBlock "+=")
-                    extraAllGroups
+                    fixedAllGroups
 
         in  ''
             ${importSection}

@@ -508,6 +508,13 @@ def test_typed_mappings_propagate_through_generated_package(
     assert register_source.index('"public.mapped_inner"') < register_source.index('"public.mapped_outer"')
     assert "public.json_value" in register_source
 
+    facade_source = (package / "__init__.py").read_text()
+    assert facade_source.index("statements.sync_query") < facade_source.index("statements.api_v2")
+    assert facade_source.index("types.pg_json_value") < facade_source.index("types.mapped_inner_v2")
+    assert facade_source.index('"PgJsonValue"') < facade_source.index('"MappedInnerV2"')
+    types_init_source = (package / "_generated" / "types" / "__init__.py").read_text()
+    assert types_init_source.index(".pg_json_value import") < types_init_source.index(".mapped_inner_v2 import")
+
     for source in package.rglob("*.py"):
         _ = ast.parse(source.read_text(), filename=str(source))
 
@@ -517,8 +524,6 @@ def test_typed_mappings_propagate_through_generated_package(
             "check",
             "--config",
             str(SRC_DIR.parent / "pyproject.toml"),
-            "--extend-ignore",
-            "I001,RUF022",
             str(package),
         ],
         capture_output=True,
