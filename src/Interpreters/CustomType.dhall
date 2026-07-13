@@ -8,8 +8,6 @@ let ImportSet = ../Structures/ImportSet.dhall
 
 let CustomKind = ../Structures/CustomKind.dhall
 
-let OnUnsupported = ../Structures/OnUnsupported.dhall
-
 let PythonNameMapping = ../Structures/PythonNameMapping.dhall
 
 let PythonNamespace = ../Structures/PythonNamespace.dhall
@@ -23,11 +21,7 @@ let EnumModule = ../Templates/EnumModule.dhall
 let CompositeModule = ../Templates/CompositeModule.dhall
 
 let Config =
-      { packageName : Text
-      , importName : Text
-      , emitSync : Bool
-      , onUnsupported : OnUnsupported.Mode
-      , customTypeNameMappings : List PythonNameMapping.CustomType
+      { customTypeNameMappings : List PythonNameMapping.CustomType
       }
 
 let Input = Model.CustomType
@@ -184,9 +178,6 @@ let run =
 
         let modulePath = "types/${moduleName}.py"
 
-        let coreConfig =
-              config.{ packageName, importName, emitSync, onUnsupported }
-
         in  merge
               { Enum =
                   \(variants : List Model.EnumVariant) ->
@@ -223,11 +214,7 @@ let run =
                                       enumNamespaceBindings input typeName
                                   }
                           , Composite =
-                              \ ( _
-                                : { fields : List CustomKind.CompositeField
-                                  , identity : CustomKind.Identity
-                                  }
-                                ) ->
+                              \(_ : CustomKind.Identity) ->
                                 Lude.Compiled.report
                                   Output
                                   [ input.pgName ]
@@ -250,7 +237,7 @@ let run =
                                 merge
                                   { Primitive =
                                       \(_ : Model.Primitive) ->
-                                        MemberGen.run coreConfig lookup m
+                                        MemberGen.run {=} lookup m
                                   , Custom =
                                       \(name : Model.Name) ->
                                         Prelude.Optional.fold
@@ -263,7 +250,7 @@ let run =
                                                 [ m.pgName, name.inSnakeCase ]
                                                 "Custom array fields inside a composite type are not supported"
                                           )
-                                          (MemberGen.run coreConfig lookup m)
+                                          (MemberGen.run {=} lookup m)
                                   }
                                   m.value.scalar
                             )
@@ -304,11 +291,7 @@ let run =
 
                             in  merge
                                   { Composite =
-                                      \ ( composite
-                                        : { fields : List CustomKind.CompositeField
-                                          , identity : CustomKind.Identity
-                                          }
-                                        ) ->
+                                      \(identity : CustomKind.Identity) ->
                                         Lude.Compiled.ok
                                           Output
                                           { modulePath
@@ -325,7 +308,7 @@ let run =
                                           , pgSchema = input.pgSchema
                                           , pgName = input.pgName
                                           , kind = TypeKind.Composite
-                                          , order = composite.identity.order
+                                          , order = identity.order
                                           , dependencies
                                           , moduleBindings =
                                               compositeNamespaceBindings

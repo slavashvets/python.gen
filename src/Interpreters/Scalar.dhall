@@ -6,16 +6,9 @@ let Sdk = ../Deps/Sdk.dhall
 
 let ImportSet = ../Structures/ImportSet.dhall
 
-let OnUnsupported = ../Structures/OnUnsupported.dhall
-
 let Primitive = ./Primitive.dhall
 
-let Config =
-      { packageName : Text
-      , importName : Text
-      , emitSync : Bool
-      , onUnsupported : OnUnsupported.Mode
-      }
+let Config = {}
 
 let Input = Model.Scalar
 
@@ -46,7 +39,7 @@ let run =
                       , decode = ScalarDecode.Passthrough
                       }
                   )
-                  (Primitive.run config primitive)
+                  (Primitive.run {=} primitive)
           , Custom =
               \(name : Model.Name) ->
                 Lude.Compiled.ok

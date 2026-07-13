@@ -8,8 +8,6 @@ let ImportSet = ../Structures/ImportSet.dhall
 
 let CustomKind = ../Structures/CustomKind.dhall
 
-let OnUnsupported = ../Structures/OnUnsupported.dhall
-
 let ResultColumns = ./ResultColumns.dhall
 
 let Compiled = Lude.Compiled
@@ -17,15 +15,9 @@ let Compiled = Lude.Compiled
 -- rowClassName is supplied by the caller (Query.dhall derives it from the
 -- query's own name) rather than living on Model.Result, so it rides on this
 -- interpreter's own local Config instead of widening Input away from
--- Model.Result. ResultColumns below does not need it, so it is projected
--- back down to the narrower shared shape at that call site.
+-- Model.Result. ResultColumns and lower interpreters use empty configs.
 let Config =
-      { packageName : Text
-      , importName : Text
-      , emitSync : Bool
-      , onUnsupported : OnUnsupported.Mode
-      , rowClassName : Text
-      }
+      { rowClassName : Text }
 
 let Input = Model.Result
 
@@ -87,11 +79,7 @@ let rowsOutput =
                   , imports = cols.imports
                   }
               )
-              ( ResultColumns.run
-                  config.{ packageName, importName, emitSync, onUnsupported }
-                  lookup
-                  columns
-              )
+              (ResultColumns.run {=} lookup columns)
 
 let run =
       \(config : Config) ->

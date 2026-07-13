@@ -8,18 +8,11 @@ let ImportSet = ../Structures/ImportSet.dhall
 
 let CustomKind = ../Structures/CustomKind.dhall
 
-let OnUnsupported = ../Structures/OnUnsupported.dhall
-
 let Member = ./Member.dhall
 
 let Compiled = Lude.Compiled
 
-let Config =
-      { packageName : Text
-      , importName : Text
-      , emitSync : Bool
-      , onUnsupported : OnUnsupported.Mode
-      }
+let Config = {}
 
 let Input = List Model.Member
 
@@ -46,7 +39,7 @@ let assemble
         }
 
 let run =
-      \(config : Config) ->
+      \(_ : Config) ->
       \(lookup : CustomKind.Lookup) ->
       \(input : Input) ->
         Compiled.map
@@ -60,7 +53,7 @@ let run =
                   Compiled.nest
                     Member.Output
                     member.pgName
-                    (Member.runWithPrefix "_db_types." config lookup member)
+                    (Member.runWithPrefix "_db_types." {=} lookup member)
               )
               input
           )

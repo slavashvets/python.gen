@@ -8,16 +8,9 @@ let Sdk = ../Deps/Sdk.dhall
 
 let ImportSet = ../Structures/ImportSet.dhall
 
-let OnUnsupported = ../Structures/OnUnsupported.dhall
-
 let Scalar = ./Scalar.dhall
 
-let Config =
-      { packageName : Text
-      , importName : Text
-      , emitSync : Bool
-      , onUnsupported : OnUnsupported.Mode
-      }
+let Config = {}
 
 let Input = Model.Value
 
@@ -67,7 +60,7 @@ let run =
                 , elementIsNullable = False
                 }
           )
-          (Scalar.run config input.scalar)
+          (Scalar.run {=} input.scalar)
 
 let qualifyCustom
     : Text -> Text -> Output -> Text

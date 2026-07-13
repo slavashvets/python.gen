@@ -220,10 +220,11 @@ nullability independently. JSON parameters use psycopg's `Json` or `Jsonb`
 wrapper only for a scalar value.
 
 `CustomKind.Lookup` classifies each custom reference as enum, composite, or
-absent, and supplies project order plus composite fields. That classification
-drives type imports, supported array ranks, nested dependencies, and adapter
-registration. The generator reports instead of guessing when a primitive or
-custom type cannot be mapped.
+absent. For enum and composite references it returns only the generated Python
+class and module identity plus stable project order; composite fields stay with
+the original model. That classification drives type imports, supported array
+ranks, nested dependencies, and adapter registration. The generator reports
+instead of guessing when a primitive or custom type cannot be mapped.
 
 The explicit custom limits are:
 

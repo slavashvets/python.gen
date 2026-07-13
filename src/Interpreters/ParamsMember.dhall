@@ -8,16 +8,9 @@ let ImportSet = ../Structures/ImportSet.dhall
 
 let CustomKind = ../Structures/CustomKind.dhall
 
-let OnUnsupported = ../Structures/OnUnsupported.dhall
-
 let Value = ./Value.dhall
 
-let Config =
-      { packageName : Text
-      , importName : Text
-      , emitSync : Bool
-      , onUnsupported : OnUnsupported.Mode
-      }
+let Config = {}
 
 let Input = Model.Member
 
@@ -216,7 +209,7 @@ let isJsonArray =
         Prelude.Bool.and [ scalarIsJson value, valueIsArray value ]
 
 let run =
-      \(config : Config) ->
+      \(_ : Config) ->
       \(lookup : CustomKind.Lookup) ->
       \(input : Input) ->
         let fieldName = PyIdent.parameterSafeName input.name.inSnakeCase
@@ -300,11 +293,7 @@ let run =
                                                   ]
                                                   "Array of an enum parameter with dimensionality > 2 is not supported"
                                 , Composite =
-                                    \ ( composite
-                                      : { fields : List CustomKind.CompositeField
-                                        , identity : CustomKind.Identity
-                                        }
-                                      ) ->
+                                    \(identity : CustomKind.Identity) ->
                                       if dimsAtMostOne
                                       then  Lude.Compiled.ok
                                               Output
@@ -312,12 +301,12 @@ let run =
                                                   ( ImportSet.combine
                                                       value.imports
                                                       ( ImportSet.customComposite
-                                                          composite.identity
+                                                          identity
                                                       )
                                                   )
                                                   ( Value.qualifyCustom
                                                       "_db_types."
-                                                      composite.identity.className
+                                                      identity.className
                                                       value
                                                     ++ nullableSuffix
                                                   )
@@ -354,7 +343,7 @@ let run =
             = Lude.Compiled.nest
                 Value.Output
                 input.pgName
-                (Value.run config input.value)
+                (Value.run {=} input.value)
 
         in  Lude.Compiled.flatMap Value.Output Output buildOutput compiledValue
 

@@ -8,14 +8,7 @@ let Compiled = Lude.Compiled
 
 let Model = ../Deps/Contract.dhall
 
-let OnUnsupported = ../Structures/OnUnsupported.dhall
-
-let Config =
-      { packageName : Text
-      , importName : Text
-      , emitSync : Bool
-      , onUnsupported : OnUnsupported.Mode
-      }
+let Config = {}
 
 let Input = Model.QueryFragments
 
@@ -52,7 +45,7 @@ let renderSql
         Prelude.Text.concatMap Model.QueryFragment renderFragment fragments
 
 let run =
-      \(config : Config) ->
+      \(_ : Config) ->
       \(input : Input) ->
         Compiled.ok Output { sqlLiteral = renderSql input }
 

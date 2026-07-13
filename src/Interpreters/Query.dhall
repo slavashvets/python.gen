@@ -12,8 +12,6 @@ let PyIdent = ../Structures/PyIdent.dhall
 
 let Surface = ../Structures/Surface.dhall
 
-let OnUnsupported = ../Structures/OnUnsupported.dhall
-
 let PythonNameMapping = ../Structures/PythonNameMapping.dhall
 
 let ResultModule = ./Result.dhall
@@ -25,10 +23,7 @@ let ParamsMember = ./ParamsMember.dhall
 let StatementModule = ../Templates/StatementModule.dhall
 
 let Config =
-      { packageName : Text
-      , importName : Text
-      , emitSync : Bool
-      , onUnsupported : OnUnsupported.Mode
+      { emitSync : Bool
       , queryNameMappings : List PythonNameMapping.Query
       }
 
@@ -143,9 +138,6 @@ let run =
 
         let rowClassName = pythonName.pascalCase ++ "Row"
 
-        let coreConfig =
-              config.{ packageName, importName, emitSync, onUnsupported }
-
         in  Compiled.nest
               Output
               input.srcPath
@@ -159,7 +151,7 @@ let run =
                       ResultModule.Output
                       "result"
                       ( ResultModule.run
-                          (coreConfig /\ { rowClassName })
+                          { rowClassName }
                           lookup
                           input.result
                       )
@@ -167,7 +159,7 @@ let run =
                   ( Compiled.nest
                       QueryFragmentsModule.Output
                       "sql"
-                      (QueryFragmentsModule.run coreConfig input.fragments)
+                      (QueryFragmentsModule.run {=} input.fragments)
                   )
                   ( Compiled.nest
                       (List ParamsMember.Output)
@@ -179,7 +171,7 @@ let run =
                               Compiled.nest
                                 ParamsMember.Output
                                 member.pgName
-                                (ParamsMember.run coreConfig lookup member)
+                                (ParamsMember.run {=} lookup member)
                           )
                           input.params
                       )

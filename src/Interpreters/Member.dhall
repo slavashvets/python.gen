@@ -10,16 +10,9 @@ let CustomKind = ../Structures/CustomKind.dhall
 
 let PyIdent = ../Structures/PyIdent.dhall
 
-let OnUnsupported = ../Structures/OnUnsupported.dhall
-
 let Value = ./Value.dhall
 
-let Config =
-      { packageName : Text
-      , importName : Text
-      , emitSync : Bool
-      , onUnsupported : OnUnsupported.Mode
-      }
+let Config = {}
 
 let Input = Model.Member
 
@@ -31,7 +24,7 @@ let Output =
 
 let runWithPrefix =
       \(prefix : Text) ->
-      \(config : Config) ->
+      \(_ : Config) ->
       \(lookup : CustomKind.Lookup) ->
       \(input : Input) ->
         -- Result-column / composite-field name becomes a dataclass field and decode
@@ -98,18 +91,14 @@ let runWithPrefix =
                                                         ]
                                                         "Array of an enum with dimensionality > 2 is not supported"
                                       , Composite =
-                                          \ ( composite
-                                            : { fields : List CustomKind.CompositeField
-                                              , identity : CustomKind.Identity
-                                              }
-                                            ) ->
+                                          \(identity : CustomKind.Identity) ->
                                             if dimsAtMostOne
                                             then  Lude.Compiled.ok
                                                     Output
                                                     ( mkOutput
-                                                        composite.identity
+                                                        identity
                                                         ( ImportSet.customComposite
-                                                            composite.identity
+                                                            identity
                                                         )
                                                     )
                                             else  Lude.Compiled.report
@@ -139,7 +128,7 @@ let runWithPrefix =
             = Lude.Compiled.nest
                 Value.Output
                 input.pgName
-                (Value.run config input.value)
+                (Value.run {=} input.value)
 
         in  Lude.Compiled.flatMap Value.Output Output buildOutput compiledValue
 

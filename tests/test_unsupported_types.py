@@ -131,13 +131,11 @@ def _write_contract_probe(
         "absent": "CustomKind.TypeKind.Absent",
         "enum": ('CustomKind.TypeKind.Enum { className = "ProbeValue", moduleName = "probe_value", order = 0 }'),
         "composite": (
-            "CustomKind.TypeKind.Composite "
-            "{ fields = [] : List CustomKind.CompositeField, "
-            'identity = { className = "ProbeValue", moduleName = "probe_value", order = 0 } }'
+            'CustomKind.TypeKind.Composite { className = "ProbeValue", moduleName = "probe_value", order = 0 }'
         ),
     }[lookup_kind]
-    custom_type_name_mappings = (
-        ", customTypeNameMappings = [] : List PythonNameMapping.CustomType" if interpreter == "CustomType" else ""
+    interpreter_config = (
+        "{ customTypeNameMappings = [] : List PythonNameMapping.CustomType }" if interpreter == "CustomType" else "{=}"
     )
     target_input = "customType" if nested else "member"
     custom_type = (
@@ -185,12 +183,7 @@ let Config/default =
       }}
 
 let interpreterConfig =
-      {{ packageName = "contract-probe"
-      , importName = "contract_probe"
-      , emitSync = False
-      , onUnsupported = OnUnsupported.Mode.Fail
-      {custom_type_name_mappings}
-      }}
+      {interpreter_config}
 
 let run =
       \\(_ : Config) ->
@@ -387,6 +380,92 @@ def test_custom_shape_contracts_succeed(
 
     result = run_pgn(pgn_bin, pgn_admin_url, project, "generate")
     assert result.returncode == 0, f"expected {case_id} to succeed:\n{_combined_output(result)}"
+
+
+def test_skip_preserves_mapped_nested_registration_chain(
+    pgn_bin: str,
+    pgn_admin_url: str,
+    tmp_path: Path,
+) -> None:
+    _, project = _fresh_project(tmp_path)
+    for query_file in (project / "queries").iterdir():
+        query_file.unlink()
+    shutil.rmtree(project / "types")
+
+    _ = (project / "migrations" / "1.sql").write_text(
+        "CREATE TYPE a_bad AS (amount money);\n"
+        "CREATE TYPE z_survivor_status AS ENUM ('ready');\n"
+        "CREATE TYPE m_survivor_leaf AS (status z_survivor_status);\n"
+        "CREATE TYPE n_survivor_outer AS (leaf m_survivor_leaf);\n"
+    )
+    _ = (project / "queries" / "read_survivor_outer.sql").write_text(
+        "SELECT ROW(ROW('ready'::z_survivor_status)::m_survivor_leaf)::n_survivor_outer AS value\n"
+    )
+    _ = (project / "queries" / "read_bad.sql").write_text("SELECT ROW(1::money)::a_bad AS value\n")
+    _write_single_artifact(project, "../../src/package.dhall", "skip-mapping-chain", "Skip")
+    config = project / "project1.pgn.yaml"
+    _ = config.write_text(
+        config.read_text()
+        + "      customTypeNameMappings:\n"
+        + "        - source:\n"
+        + "            schema: public\n"
+        + "            name: z_survivor_status\n"
+        + "          target:\n"
+        + "            snakeCase: mapped_status\n"
+        + "            pascalCase: MappedStatus\n"
+    )
+
+    result = run_pgn(pgn_bin, pgn_admin_url, project, "generate")
+    diagnostic = re.sub(r"\x1b\[[0-9;?]*[A-Za-z]", "", _combined_output(result))
+    assert result.returncode == 0, f"mapped Skip generation failed:\n{diagnostic}"
+    warnings = re.findall(r"Warning: ([^\n]+)\nStage: ([^\n]+)", diagnostic)
+    assert warnings == [
+        ("Unsupported type", "Generating > python > Compiling > money > amount > a_bad"),
+        (
+            "Custom type not found in project customTypes",
+            "Generating > python > Compiling > a_bad > value > result > ./queries/read_bad.sql",
+        ),
+    ]
+
+    package = project / "artifacts" / "python" / "src" / "skip_mapping_chain"
+    generated = package / "_generated"
+    types = generated / "types"
+    assert {path.name for path in types.glob("*.py")} == {
+        "__init__.py",
+        "m_survivor_leaf.py",
+        "mapped_status.py",
+        "n_survivor_outer.py",
+    }
+
+    generated_sources = [path.read_text() for path in package.rglob("*.py")]
+    assert all("a_bad" not in source and "ABad" not in source for source in generated_sources)
+    assert all("read_bad" not in source for source in generated_sources)
+    assert not list(package.rglob("*read_bad*"))
+
+    leaf_source = (types / "m_survivor_leaf.py").read_text()
+    outer_source = (types / "n_survivor_outer.py").read_text()
+    assert [line for line in leaf_source.splitlines() if line.startswith("from .")] == [
+        "from .mapped_status import MappedStatus"
+    ]
+    assert "status: MappedStatus" in leaf_source
+    assert [line for line in outer_source.splitlines() if line.startswith("from .")] == [
+        "from .m_survivor_leaf import MSurvivorLeaf"
+    ]
+    assert "leaf: MSurvivorLeaf" in outer_source
+
+    register_source = (generated / "_register.py").read_text()
+    pg_name_constants = [
+        line for line in register_source.splitlines() if line.startswith("_") and "_pg_name = " in line
+    ]
+    assert pg_name_constants == [
+        '_mapped_status_pg_name = "public.z_survivor_status"',
+        '_m_survivor_leaf_pg_name = "public.m_survivor_leaf"',
+        '_n_survivor_outer_pg_name = "public.n_survivor_outer"',
+    ]
+
+    statement = (generated / "statements" / "read_survivor_outer.py").read_text()
+    assert "from .. import types as _db_types" in statement
+    assert "value: _db_types.NSurvivorOuter" in statement
 
 
 def test_skip_unsupported_drops_offending_units_and_cascades(pgn_bin: str, pgn_admin_url: str, tmp_path: Path) -> None:

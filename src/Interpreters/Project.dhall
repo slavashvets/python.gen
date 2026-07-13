@@ -10,8 +10,6 @@ let CustomKind = ../Structures/CustomKind.dhall
 
 let PyIdent = ../Structures/PyIdent.dhall
 
-let Value = ./Value.dhall
-
 let QueryGen = ./Query.dhall
 
 let CustomTypeGen = ./CustomType.dhall
@@ -49,9 +47,9 @@ let Config =
       , customTypeNameMappings : Optional (List PythonNameMapping.CustomType)
       }
 
--- The root resolves every public option once. Query and CustomType receive only
--- their own mapping lists; lower interpreters receive the four scalar fields so
--- a non-empty mapping does not multiply through every member normalization.
+-- The root resolves every public option once. Query receives only emitSync and
+-- its mappings, while CustomType receives only its mappings. Lower interpreters
+-- use empty configs except for Result's caller-supplied rowClassName.
 let ResolvedConfig =
       { packageName : Text
       , importName : Text
@@ -525,56 +523,26 @@ let withHeader =
       \(file : Lude.File.Type) ->
         { path = file.path, content = generatedHeader ++ file.content }
 
-let lookupConfig
-    : ResolvedConfig
-    = { packageName = ""
-      , importName = ""
-      , emitSync = False
-      , onUnsupported = OnUnsupported.Mode.Fail
-      , queryNameMappings = [] : List PythonNameMapping.Query
-      , customTypeNameMappings = [] : List PythonNameMapping.CustomType
-      }
-
-let memberPyType =
-      \(member : Model.Member) ->
-        let valuePyType =
-              merge
-                { Ok =
-                    \(wrapped : { value : Value.Output, warnings : List Report }) ->
-                      wrapped.value.pyType
-                , Err = \(_ : Report) -> "object"
-                }
-                ( Value.run
-                    lookupConfig.{ packageName, importName, emitSync, onUnsupported }
-                    member.value
-                )
-
-        in  valuePyType ++ (if member.isNullable then " | None" else "")
-
-let compositeFields =
-      \(members : List Model.Member) ->
-        Prelude.List.map
-          Model.Member
-          CustomKind.CompositeField
-          ( \(member : Model.Member) ->
-              { fieldName = PyIdent.pySafeName member.name.inSnakeCase
-              , pyType = memberPyType member
-              }
-          )
-          members
-
 let IndexedCustomType = { index : Natural, value : Model.CustomType }
 
-let buildLookup =
+let LookupKind = < Composite | Enum | Domain >
+
+let LookupEntry =
+      { contractName : Text
+      , kind : LookupKind
+      , identity : CustomKind.Identity
+      }
+
+let ResolvedCustomType =
+      { value : Model.CustomType, lookupEntry : LookupEntry }
+
+let resolveCustomTypes =
       \(nameMappings : List PythonNameMapping.CustomType) ->
       \(customTypes : List Model.CustomType) ->
-        Prelude.List.fold
+        Prelude.List.map
           IndexedCustomType
-          (Prelude.List.indexed Model.CustomType customTypes)
-          CustomKind.Lookup
+          ResolvedCustomType
           ( \(entry : IndexedCustomType) ->
-            \(rest : CustomKind.Lookup) ->
-            \(name : Model.Name) ->
               let customType = entry.value
 
               let pythonName =
@@ -593,26 +561,52 @@ let buildLookup =
                     , order = entry.index
                     }
 
+              let kind =
+                    merge
+                      { Composite = \(_ : List Model.Member) -> LookupKind.Composite
+                      , Enum = \(_ : List Model.EnumVariant) -> LookupKind.Enum
+                      , Domain = \(_ : Model.Value) -> LookupKind.Domain
+                      }
+                      customType.definition
+
+              in  { value = customType
+                  , lookupEntry =
+                      { contractName = customType.name.inSnakeCase
+                      , kind
+                      , identity
+                      }
+                  }
+          )
+          (Prelude.List.indexed Model.CustomType customTypes)
+
+let lookupEntries =
+      \(customTypes : List ResolvedCustomType) ->
+        Prelude.List.map
+          ResolvedCustomType
+          LookupEntry
+          (\(customType : ResolvedCustomType) -> customType.lookupEntry)
+          customTypes
+
+let buildLookup =
+      \(entries : List LookupEntry) ->
+        Prelude.List.fold
+          LookupEntry
+          entries
+          CustomKind.Lookup
+          ( \(entry : LookupEntry) ->
+            \(rest : CustomKind.Lookup) ->
+              \(name : Model.Name) ->
               -- Text/equal is a pgn embedded-Dhall builtin. The upstream exit is
               -- a stable custom kind or id on Scalar.Custom.
-              in  if    Text/equal
-                          name.inSnakeCase
-                          customType.name.inSnakeCase
-                  then  merge
-                          { Composite =
-                              \(members : List Model.Member) ->
-                                CustomKind.TypeKind.Composite
-                                  { fields = compositeFields members
-                                  , identity
-                                  }
-                          , Enum =
-                              \(_ : List Model.EnumVariant) ->
-                                CustomKind.TypeKind.Enum identity
-                          , Domain =
-                              \(_ : Model.Value) -> CustomKind.TypeKind.Absent
-                          }
-                          customType.definition
-                  else  rest name
+                if    Text/equal name.inSnakeCase entry.contractName
+                then  merge
+                        { Composite =
+                            CustomKind.TypeKind.Composite entry.identity
+                        , Enum = CustomKind.TypeKind.Enum entry.identity
+                        , Domain = CustomKind.TypeKind.Absent
+                        }
+                        entry.kind
+                else  rest name
           )
           (\(_ : Model.Name) -> CustomKind.TypeKind.Absent)
 
@@ -1060,7 +1054,7 @@ let combineOutputs =
 -- warning list. Custom types use a pair of plain functions instead of an
 -- equivalent record (see `typeSucceeds`/`typeWarning` below) purely because
 -- that was the faster shape empirically for the type side, and the query
--- side re-uses `queryChecks` because calling QueryGen.run config lookup query from
+-- side re-uses `queryChecks` because calling QueryGen.run queryConfig lookup query from
 -- more than one place in this function (once to decide keep/drop, again to
 -- render, again for a warning -- each a fresh, separate call site in the
 -- source) measurably multiplies Dhall's normalization cost per extra call
@@ -1136,10 +1130,10 @@ let run =
               }
 
         let queryConfig =
-              resolvedConfig.{ packageName, importName, emitSync, onUnsupported, queryNameMappings }
+              resolvedConfig.{ emitSync, queryNameMappings }
 
         let customTypeConfig =
-              resolvedConfig.{ packageName, importName, emitSync, onUnsupported, customTypeNameMappings }
+              resolvedConfig.{ customTypeNameMappings }
 
         let skip = merge { Fail = False, Skip = True } resolvedConfig.onUnsupported
 
@@ -1169,33 +1163,45 @@ let run =
                   }
                   (CustomTypeGen.run customTypeConfig candidateLookup ct)
 
+        let resolvedCustomTypes =
+              resolveCustomTypes
+                resolvedConfig.customTypeNameMappings
+                input.customTypes
+
         -- Nested custom support requires transitive closure: after one type is
         -- removed, composites depending on it must be reconsidered against the
         -- smaller lookup. Each bounded pass can only remove survivors.
-        let effectiveCustomTypes
-            : List Model.CustomType
+        let effectiveResolvedCustomTypes
+            : List ResolvedCustomType
             = if    skip
               then  Natural/fold
                       (Prelude.List.length Model.CustomType input.customTypes)
-                      (List Model.CustomType)
-                      ( \(survivors : List Model.CustomType) ->
+                      (List ResolvedCustomType)
+                      ( \(survivors : List ResolvedCustomType) ->
                           let candidateLookup =
-                                buildLookup
-                                  resolvedConfig.customTypeNameMappings
-                                  survivors
+                                buildLookup (lookupEntries survivors)
 
                           in  Prelude.List.filter
-                                Model.CustomType
-                                (typeSucceedsWith candidateLookup)
+                                ResolvedCustomType
+                                ( \(customType : ResolvedCustomType) ->
+                                    typeSucceedsWith
+                                      candidateLookup
+                                      customType.value
+                                )
                                 survivors
                       )
-                      input.customTypes
-              else  input.customTypes
+                      resolvedCustomTypes
+              else  resolvedCustomTypes
+
+        let effectiveCustomTypes =
+              Prelude.List.map
+                ResolvedCustomType
+                Model.CustomType
+                (\(customType : ResolvedCustomType) -> customType.value)
+                effectiveResolvedCustomTypes
 
         let lookup =
-              buildLookup
-                resolvedConfig.customTypeNameMappings
-                effectiveCustomTypes
+              buildLookup (lookupEntries effectiveResolvedCustomTypes)
 
         -- Fail mode: identical to the pre-Skip code (traverseList straight
         -- over input.customTypes), so its error message/path is unchanged.

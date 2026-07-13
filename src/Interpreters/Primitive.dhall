@@ -6,14 +6,7 @@ let Sdk = ../Deps/Sdk.dhall
 
 let ImportSet = ../Structures/ImportSet.dhall
 
-let OnUnsupported = ../Structures/OnUnsupported.dhall
-
-let Config =
-      { packageName : Text
-      , importName : Text
-      , emitSync : Bool
-      , onUnsupported : OnUnsupported.Mode
-      }
+let Config = {}
 
 let Input = Model.Primitive
 
@@ -31,7 +24,7 @@ let unsupported =
 let plain = \(pyType : Text) -> supported pyType ImportSet.empty
 
 let run =
-      \(config : Config) ->
+      \(_ : Config) ->
       \(input : Input) ->
         merge
           { Bit = unsupported "bit"
