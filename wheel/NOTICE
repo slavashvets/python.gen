@@ -14,4 +14,4 @@ because resolved.dhall inlines the gen-sdk Dhall contract. Components:
 Code that this generator emits into your project is not covered by the GPL:
 emitted files carry an SPDX-License-Identifier: MIT-0 header and may be used
 under the containing project's own terms. See the python.gen README,
-section License.
+section Provenance and license.

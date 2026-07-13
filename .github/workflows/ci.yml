@@ -124,23 +124,9 @@ jobs:
         with:
           ref: ${{ inputs.ref || github.sha }}
 
-      # The `as Source` import mode on src/Deps only changes how pgn loads the
-      # remote packages (unnormalized, to save RAM), not what they evaluate to.
-      # The pinned action below bundles a dhall fork that predates the mode, so
-      # strip it here; the evaluation is semantically identical either way. The
-      # sha256 pins go with it: an as-Source pin hashes the import's source,
-      # not the normalized expression a plain import verifies against, so after
-      # the strip the pins would be checked against the wrong algorithm.
-      - name: Strip `as Source` and its source-hash pins for the action's dhall
-        shell: bash
-        run: |
-          set -euo pipefail
-          sed -i -e 's/^[[:space:]]*as Source$//' -e 's/^[[:space:]]*sha256:[0-9a-f]\{64\}$//' src/Deps/*.dhall
-
-      # A plain, standard-Dhall evaluator cannot run this: src/Interpreters/Project.dhall's
-      # buildLookup and gen-sdk's own Fixtures.Exhaustive both use Text/equal, a builtin
-      # from pgn's forked Dhall, absent from the upstream dhall-lang Prelude. This action
-      # bundles that same fork.
+      # A plain, standard-Dhall evaluator cannot run this because the local
+      # Project.buildLookup uses Text/equal, a builtin from pgn's forked Dhall.
+      # The pinned action bundles that same fork.
       - name: Generate output from Dhall
         uses: nikita-volkov/dhall-directory-tree.github-action@60a18dc647d6daea805263ea0fed7bb8011f3bcd # v2
         with:

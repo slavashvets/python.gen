@@ -33,12 +33,10 @@ let Compiled = Lude.Compiled
 
 let Input = Model.Query
 
--- A query renders to one statement module: its own Row dataclass and decode
--- function (when it returns rows), the async function, and optional adjacent
--- sync function. rowClassName is still surfaced here (not just
--- internal to the rendered content) because Project.dhall's facade needs the
--- name to build the re-export line; the Row's full definition does not
--- leave this module.
+-- A query renders to one canonical statement module: its Row dataclass when it
+-- returns rows, the async function, and an optional adjacent sync function.
+-- rowClassName is also surfaced because Project.dhall needs the name for facade
+-- re-exports; the Row's definition remains in this module.
 let Output =
       { functionName : Text
       , rowClassName : Optional Text
@@ -100,10 +98,8 @@ let render =
                 )
                 result.rowClass
 
-        -- The Row's own imports (JsonValue, Decimal, custom types, ...) and
-        -- the parameters' imports both land in this one file now, so they
-        -- merge into a single ImportSet instead of flowing to two separate
-        -- consumers (the statement module and, formerly, _rows.py).
+        -- Row and parameter imports share the canonical statement file, so they
+        -- must merge into one ImportSet before rendering.
         let mergedImports = ImportSet.combine paramImports result.imports
 
         let content =

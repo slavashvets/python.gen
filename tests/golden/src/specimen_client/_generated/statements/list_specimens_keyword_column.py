@@ -13,11 +13,11 @@ from .._runtime import fetch_many as _fetch_many
 from ..sync._runtime import fetch_many as _fetch_many_sync
 
 SQL = """\
--- Keyword result-column coverage: the column aliased to the reserved word class
--- must emit a dataclass field and decode kwarg of class_ while the row lookup
--- keeps the raw \"class\". Without sanitization the generated _rows.py has a
--- SyntaxError, so this query locks the result-column guard (mirrors
--- list_specimens_by_class for params).
+-- Keyword result-column coverage: the SQL column aliased to reserved word class
+-- stays named \"class\", while the statement-local Row field is class_.
+-- psycopg args_row constructs that Row positionally, so no name remapping
+-- can hide a missed sanitizer. Without sanitization the canonical statement
+-- is invalid Python; this query locks the result-column guard.
 SELECT
   id,
   title AS \"class\"

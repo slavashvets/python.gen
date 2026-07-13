@@ -22,22 +22,20 @@ uv run ruff check --config pyproject.toml tests wheel
 uv run ruff format --check --config pyproject.toml tests wheel
 '''
 
-# Cold-cache generate benchmark: current gen (`as Source` Deps) vs the same
-# tree with pre-as-Source Deps, same pgn binary, fresh dhall cache per run.
-# Needs a reachable Postgres (PGN_TEST_DATABASE_URL). See bench/as-source.sh
-# for the PGN_BEFORE_BIN override that runs the before variant on pgn 0.8.0.
+# Historical cold-cache import-mode benchmark. Current Deps are ordinary
+# sha256-pinned imports, so a current checkout does not reproduce its variants.
 [tasks."bench:as-source"]
-description = "Benchmark cold `pgn generate` with vs without `as Source` Deps"
+description = "Run the historical cold import-mode benchmark"
 run = "bench/as-source.sh"
 
 # One-command builds of the fixture client for eyeballing the two variants;
 # output goes to ./demo-with-as-source / ./demo-without-as-source.
 [tasks."generate:as-source"]
-description = "Build the fixture client with the committed `as Source` Deps"
+description = "Run the historical with-mode fixture helper"
 run = "bench/generate.sh with"
 
 [tasks."generate:no-as-source"]
-description = "Build the fixture client with the pre-as-Source Deps"
+description = "Run the historical ordinary-import fixture helper"
 run = "bench/generate.sh without"
 
 # Regenerates only the combined "python" artifact. A full 7-artifact generate
