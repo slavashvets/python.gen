@@ -18,10 +18,10 @@ generator-side annotation parsing remains.
 
 Issue [#67](https://github.com/pgenie-io/pgenie/issues/67) is closed. Since pgn
 0.7.2, successful generation surfaces reports from `Compiled.warnings`; this
-repository pins pgn 0.9.1.
+repository pins pgn v0.12.0.
 
 With `onUnsupported: Skip`, the generator retains a report for every dropped
-unit while fixed-point filtering removes unsupported custom types, their
+unit while a single-pass survivor fold removes unsupported custom types, their
 dependents, and affected statements. See `DESIGN.md`, section 8.
 
 ## 3. Preserve qualified custom-type identity: actionable

@@ -52,10 +52,10 @@ canonical statement module. `packageName` becomes an import name by replacing
 `-` with `_`.
 
 `onUnsupported: "Fail"` aborts generation with a path-aware report.
-`onUnsupported: "Skip"` preserves warnings and repeatedly removes an
-unsupported custom type, its dependent custom types and statements, and every
-affected facade, registration, and statement entry until the survivors are a
-strict-importable fixed point.
+`onUnsupported: "Skip"` preserves warnings and, in a single pass over the
+topologically-sorted custom types, removes an unsupported custom type, its
+dependent custom types and statements, and every affected facade,
+registration, and statement entry, leaving a strict-importable survivor set.
 
 Generated Python names are not audited for collisions at generation time.
 Query and custom-type identifiers are derived directly from their PostgreSQL
@@ -219,7 +219,7 @@ disabled.
 
 ## Development
 
-This repository pins pgn 0.9.1 in `mise.toml`. Run all tools through `mise`:
+This repository pins pgn v0.12.0 in `mise.toml`. Run all tools through `mise`:
 
 ```bash
 mise run install
@@ -229,7 +229,7 @@ mise run test
 
 The harness drives real pgn subprocesses against a live PostgreSQL server and
 only creates and drops its own scratch databases. Set `PGN_TEST_DATABASE_URL`
-for a non-default server. The full verified suite is 73 passed and 0 skipped;
+for a non-default server. The full verified suite is 50 passed and 0 skipped;
 it includes byte-for-byte golden comparison, async and sync round trips,
 basedpyright strict, Ruff, generated-quality budgets, unsupported-type modes,
 and public identity checks.

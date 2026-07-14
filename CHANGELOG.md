@@ -71,8 +71,8 @@
   class-aware adapters, pure models, canonical `args_row` Rows, and no query
   decoders, model codecs, casts, or bytes SQL. H2 CONFIRM: 25 Python files /
   1467 lines / 11 statement files / 801 statement lines / 11 SQL. H3 CONFIRM:
-  Ruff 0/0, authored long0, SQL long0, raw output/no postformat. Tests: 73
-  passed, 0 skipped; pgn 0.9.1; strict basedpyright 0/0.
+  Ruff 0/0, authored long0, SQL long0, raw output/no postformat. Tests: 50
+  passed, 0 skipped; pgn v0.12.0; strict basedpyright 0/0.
 
 - Migrated the generator to gen-contract v4.0.1 and gen-sdk v2.0.0 using
   `Sdk.Sigs`. The implementation moved from `gen/` into `src/`, the working-tree

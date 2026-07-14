@@ -332,7 +332,8 @@ element nullability. `Member` and `ParamsMember` apply member nullability,
 identifier safety, lookup classification, imports, and parameter wrapping.
 `ResultColumns` builds Row field declarations in analyzed order. `Query`
 combines SQL, Row, parameters, and surfaces. `Project` owns lookup scope,
-fixed-point filtering, registration order, file selection, and facades.
+single-pass survivor filtering, registration order, file selection, and
+facades.
 
 ## 10. The pinned `Text/equal` constraint
 
@@ -405,7 +406,7 @@ PostgreSQL with these verdicts:
 - H2 CONFIRM: 25 Python files / 1467 lines / 11 statement files / 801 statement
   lines / 11 SQL.
 - H3 CONFIRM: Ruff 0/0, authored long0, SQL long0, raw output/no postformat.
-- Tests: 73 passed, 0 skipped; pgn 0.9.1; strict basedpyright 0/0.
+- Tests: 50 passed, 0 skipped; pgn v0.12.0; strict basedpyright 0/0.
 
 The H1 round trip covers both connection surfaces and exact cross-facade
 identities. It covers scalar enum, enum arrays including rank 2, scalar
