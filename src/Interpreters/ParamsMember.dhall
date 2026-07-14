@@ -320,7 +320,7 @@ let run =
                                       [ ref.name.inSnakeCase ]
                                       "Custom type not found in project customTypes"
                                 }
-                                (lookup ref.name)
+                                (CustomKind.at lookup ref.index)
                       )
                       ( if    isJsonArrayParam
                         then  Lude.Compiled.report

@@ -14,6 +14,8 @@ let QueryGen = ./Query.dhall
 
 let CustomTypeGen = ./CustomType.dhall
 
+let PrimitiveGen = ./Primitive.dhall
+
 let CoreModule = ../Templates/CoreModule.dhall
 
 let RuntimeModule = ../Templates/RuntimeModule.dhall
@@ -120,36 +122,92 @@ let resolveCustomTypes =
           )
           (Prelude.List.indexed Model.CustomType customTypes)
 
-let lookupEntries =
-      \(customTypes : List ResolvedCustomType) ->
+-- The fixed, never-shrinking kind classification of every custom type, in
+-- `input.customTypes` order (so position i == a `CustomTypeRef.index` of i).
+-- A type's kind (Enum/Composite/Domain) is a property of its own definition
+-- and never changes across Skip removal passes; Domain has no Python identity,
+-- so it classifies as `Absent`. Survivorship is layered on separately (see
+-- `supported`/`lookup` in `run`), keeping the two concerns that the former
+-- `buildLookup` conflated cleanly apart.
+let kindOf
+    : List ResolvedCustomType -> CustomKind.Lookup
+    = \(entries : List ResolvedCustomType) ->
         Prelude.List.map
           ResolvedCustomType
-          LookupEntry
-          (\(customType : ResolvedCustomType) -> customType.lookupEntry)
-          customTypes
-
-let buildLookup =
-      \(entries : List LookupEntry) ->
-        Prelude.List.fold
-          LookupEntry
-          entries
-          CustomKind.Lookup
-          ( \(entry : LookupEntry) ->
-            \(rest : CustomKind.Lookup) ->
-              \(name : Model.Name) ->
-              -- Text/equal is a pgn embedded-Dhall builtin. The upstream exit is
-              -- a stable custom kind or id on Scalar.Custom.
-                if    Text/equal name.inSnakeCase entry.contractName
-                then  merge
-                        { Composite =
-                            CustomKind.TypeKind.Composite entry.identity
-                        , Enum = CustomKind.TypeKind.Enum entry.identity
-                        , Domain = CustomKind.TypeKind.Absent
-                        }
-                        entry.kind
-                else  rest name
+          CustomKind.TypeKind
+          ( \(rt : ResolvedCustomType) ->
+              merge
+                { Composite =
+                    CustomKind.TypeKind.Composite rt.lookupEntry.identity
+                , Enum = CustomKind.TypeKind.Enum rt.lookupEntry.identity
+                , Domain = CustomKind.TypeKind.Absent
+                }
+                rt.lookupEntry.kind
           )
-          (\(_ : Model.Name) -> CustomKind.TypeKind.Absent)
+          entries
+
+-- True when the primitive has a faithful Python mapping (`money`, `bit`, geo
+-- types, etc. do not). Reuses the Primitive interpreter as the oracle rather
+-- than duplicating its 60-way supported/unsupported table, so this predicate
+-- can never drift from what `CustomTypeGen.run` actually emits.
+let primitiveSupported =
+      \(primitive : Model.Primitive) ->
+        merge
+          { Ok =
+              \(_ : { warnings : List Report, value : PrimitiveGen.Output }) ->
+                True
+          , Err = \(_ : Report) -> False
+          }
+          (PrimitiveGen.run {=} primitive)
+
+-- Whether a custom type's OWN definition compiles, assuming every custom type
+-- it references is present (the transitive "is a referenced type still a
+-- survivor" half is handled by `Sdk.CustomTypes.supportedCustomTypesReasoned`,
+-- which folds this predicate over the topologically-sorted `customTypes`).
+-- This exactly mirrors the own-shape failure modes of `CustomTypeGen.run`:
+--   * Domain           -> never supported (no Python lowering).
+--   * Enum             -> always compiles.
+--   * Composite        -> every member must compile: a primitive member needs a
+--                         supported primitive; a custom member must be a bare
+--                         scalar (CustomType.dhall rejects any custom array
+--                         field, regardless of the referenced kind).
+-- Using this as the survivorship predicate (instead of the former
+-- `buildLookup`-based render probe) keeps Skip mode dropping exactly the set of
+-- types that could not be emitted, so no surviving type later fails to render.
+let ownDefinitionSupported
+    : Model.CustomTypeDefinition -> Bool
+    = \(definition : Model.CustomTypeDefinition) ->
+        merge
+          { Composite =
+              \(members : List Model.Member) ->
+                Prelude.List.all
+                  Model.Member
+                  ( \(member : Model.Member) ->
+                      merge
+                        { Primitive =
+                            \(primitive : Model.Primitive) ->
+                              primitiveSupported primitive
+                        , Custom =
+                            \(_ : Model.CustomTypeRef) ->
+                              Natural/isZero member.value.dimensionality
+                        }
+                        member.value.scalar
+                  )
+                  members
+          , Enum = \(_ : List Model.EnumVariant) -> True
+          , Domain = \(_ : Model.Value) -> False
+          }
+          definition
+
+let boolAt =
+      \(bools : List Bool) ->
+      \(index : Natural) ->
+        Prelude.Optional.fold
+          Bool
+          (Prelude.List.index index Bool bools)
+          Bool
+          (\(b : Bool) -> b)
+          False
 
 let sameOrder =
       \(left : Natural) ->
@@ -499,78 +557,90 @@ let run =
 
         let skip = merge { Fail = False, Skip = True } resolvedConfig.onUnsupported
 
-        let typeSucceedsWith =
-              \(candidateLookup : CustomKind.Lookup) ->
-              \(ct : Model.CustomType) ->
-                merge
-                  { Ok =
-                      \(_ : { value : CustomTypeGen.Output, warnings : List Report }) ->
-                        True
-                  , Err = \(_ : Report) -> False
-                  }
-                  (CustomTypeGen.run customTypeConfig candidateLookup ct)
-
-        -- Nested under the type's own name so the warning names the type
-        -- that failed, not just the inner member/column that triggered it
-        -- (CustomType.run itself does not).
-        let typeWarningWith =
-              \(candidateLookup : CustomKind.Lookup) ->
-              \(ct : Model.CustomType) ->
-                merge
-                  { Ok =
-                      \(_ : { value : CustomTypeGen.Output, warnings : List Report }) ->
-                        None Report
-                  , Err =
-                      \(err : Report) -> Some { path = [ ct.name.inSnakeCase ] # err.path, message = err.message }
-                  }
-                  (CustomTypeGen.run customTypeConfig candidateLookup ct)
-
         let resolvedCustomTypes = resolveCustomTypes input.customTypes
 
-        -- Nested custom support requires transitive closure: after one type is
-        -- removed, composites depending on it must be reconsidered against the
-        -- smaller lookup. Each bounded pass can only remove survivors.
-        let effectiveResolvedCustomTypes
-            : List ResolvedCustomType
+        -- The unmasked, index-aligned kind classification of every custom type.
+        let fixedKindOf = kindOf resolvedCustomTypes
+
+        -- Per-index survivorship. In Skip mode this is the one-pass transitive
+        -- cascade from gen-sdk: `supportedCustomTypesReasoned` folds
+        -- `ownDefinitionSupported` over the topologically-sorted `customTypes`,
+        -- returning `None` (supported) or `Some <root-cause ref>` (unsupported)
+        -- per index; we keep only the Bool. In Fail mode nothing is ever
+        -- dropped, so every index is supported.
+        let supported
+            : List Bool
             = if    skip
-              then  Natural/fold
-                      (Prelude.List.length Model.CustomType input.customTypes)
-                      (List ResolvedCustomType)
-                      ( \(survivors : List ResolvedCustomType) ->
-                          let candidateLookup =
-                                buildLookup (lookupEntries survivors)
-
-                          in  Prelude.List.filter
-                                ResolvedCustomType
-                                ( \(customType : ResolvedCustomType) ->
-                                    typeSucceedsWith
-                                      candidateLookup
-                                      customType.value
-                                )
-                                survivors
+              then  Prelude.List.map
+                      (Optional Model.CustomTypeRef)
+                      Bool
+                      (Prelude.Optional.null Model.CustomTypeRef)
+                      ( Sdk.CustomTypes.supportedCustomTypesReasoned
+                          ownDefinitionSupported
+                          input.customTypes
                       )
+              else  Prelude.List.map
+                      ResolvedCustomType
+                      Bool
+                      (\(_ : ResolvedCustomType) -> True)
                       resolvedCustomTypes
-              else  resolvedCustomTypes
 
-        let effectiveCustomTypes =
-              Prelude.List.map
-                ResolvedCustomType
-                Model.CustomType
-                (\(customType : ResolvedCustomType) -> customType.value)
+        -- The kind lookup handed to every interpreter. In Skip mode an
+        -- unsupported index is masked to `Absent` regardless of its real kind,
+        -- so a reference to a removed type reads exactly as a missing type
+        -- (the "Absent on either failure" invariant the former `buildLookup`
+        -- provided by shrinking its entry list). In Fail mode it is the
+        -- unmasked classification, so behaviour is identical to before Skip.
+        let lookup
+            : CustomKind.Lookup
+            = if    skip
+              then  Prelude.List.map
+                      { index : Natural, value : CustomKind.TypeKind }
+                      CustomKind.TypeKind
+                      ( \(e : { index : Natural, value : CustomKind.TypeKind }) ->
+                          if    boolAt supported e.index
+                          then  e.value
+                          else  CustomKind.TypeKind.Absent
+                      )
+                      (Prelude.List.indexed CustomKind.TypeKind fixedKindOf)
+              else  fixedKindOf
+
+        let indexedResolvedCustomTypes
+            : List { index : Natural, value : ResolvedCustomType }
+            = Prelude.List.indexed ResolvedCustomType resolvedCustomTypes
+
+        let effectiveResolvedCustomTypes
+            : List { index : Natural, value : ResolvedCustomType }
+            = if    skip
+              then  Prelude.List.filter
+                      { index : Natural, value : ResolvedCustomType }
+                      ( \(e : { index : Natural, value : ResolvedCustomType }) ->
+                          boolAt supported e.index
+                      )
+                      indexedResolvedCustomTypes
+              else  indexedResolvedCustomTypes
+
+        let effectiveCustomTypes
+            : List { index : Natural, value : Model.CustomType }
+            = Prelude.List.map
+                { index : Natural, value : ResolvedCustomType }
+                { index : Natural, value : Model.CustomType }
+                ( \(e : { index : Natural, value : ResolvedCustomType }) ->
+                    { index = e.index, value = e.value.value }
+                )
                 effectiveResolvedCustomTypes
 
-        let lookup =
-              buildLookup (lookupEntries effectiveResolvedCustomTypes)
-
-        -- Fail mode: identical to the pre-Skip code (traverseList straight
-        -- over input.customTypes), so its error message/path is unchanged.
+        -- Fail mode: `effectiveCustomTypes` is every input type (indexed), so
+        -- this is the pre-Skip traversal with each type's own index threaded to
+        -- CustomTypeGen.run for its self-lookup; its error message/path is
+        -- unchanged. Skip mode traverses only the survivors.
         let typesForCombine
             : Lude.Compiled.Type (List CustomTypeGen.Output)
             = Lude.Compiled.traverseList
-                Model.CustomType
+                { index : Natural, value : Model.CustomType }
                 CustomTypeGen.Output
-                ( \(ct : Model.CustomType) ->
-                    CustomTypeGen.run customTypeConfig lookup ct
+                ( \(e : { index : Natural, value : Model.CustomType }) ->
+                    CustomTypeGen.run customTypeConfig lookup e.index e.value
                 )
                 effectiveCustomTypes
 
@@ -620,16 +690,39 @@ let run =
                 registrationOrder
                 typesForCombine
 
+        -- Nested under the type's own name so the warning names the type that
+        -- failed, not just the inner member/column that triggered it
+        -- (CustomType.run itself does not). Uses the single final `lookup`
+        -- (which already masks removed types to Absent) and each type's own
+        -- real index, so every input type is diagnosed at its true position.
+        let typeWarning =
+              \(ct : Model.CustomType) ->
+              \(index : Natural) ->
+                merge
+                  { Ok =
+                      \(_ : { value : CustomTypeGen.Output, warnings : List Report }) ->
+                        None Report
+                  , Err =
+                      \(err : Report) ->
+                        Some
+                          { path = [ ct.name.inSnakeCase ] # err.path
+                          , message = err.message
+                          }
+                  }
+                  (CustomTypeGen.run customTypeConfig lookup index ct)
+
         let skipWarnings
             : List Report
             = if    skip
               then    Prelude.List.unpackOptionals
                         Report
                         ( Prelude.List.map
-                            Model.CustomType
+                            { index : Natural, value : ResolvedCustomType }
                             (Optional Report)
-                            (typeWarningWith lookup)
-                            input.customTypes
+                            ( \(e : { index : Natural, value : ResolvedCustomType }) ->
+                                typeWarning e.value.value e.index
+                            )
+                            indexedResolvedCustomTypes
                         )
                     # Prelude.List.unpackOptionals
                         Report

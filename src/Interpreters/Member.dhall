@@ -113,7 +113,7 @@ let runWithPrefix =
                                             [ ref.name.inSnakeCase ]
                                             "Custom type not found in project customTypes"
                                       }
-                                      (lookup ref.name)
+                                      (CustomKind.at lookup ref.index)
                             )
                             ( Lude.Compiled.report
                                 Output

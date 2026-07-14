@@ -73,6 +73,11 @@ let renderExtraImports =
 let run =
       \(config : Config) ->
       \(lookup : CustomKind.Lookup) ->
+      -- The custom type's own position in the project's `customTypes` list.
+      -- Unlike a `CustomTypeRef`, a `Model.CustomType` does not carry its own
+      -- index, so the caller (Interpreters/Project.dhall) threads it in for the
+      -- self-lookup kind-consistency check in each merge arm below.
+      \(index : Natural) ->
       \(input : Input) ->
         let pythonName =
               { snakeCase = PyIdent.typeModuleSafeName input.name.inSnakeCase
@@ -130,7 +135,7 @@ let run =
                                 [ input.pgName ]
                                 "Custom type not found in project customTypes"
                           }
-                          (lookup input.name)
+                          (CustomKind.at lookup index)
               , Composite =
                   \(members : List Model.Member) ->
                     let compiledMembers
@@ -224,7 +229,7 @@ let run =
                                         [ input.pgName ]
                                         "Custom type not found in project customTypes"
                                   }
-                                  (lookup input.name)
+                                  (CustomKind.at lookup index)
 
                     in  Lude.Compiled.flatMap
                           (List MemberGen.Output)

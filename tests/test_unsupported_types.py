@@ -130,6 +130,13 @@ def _write_contract_probe(
         ),
     }[lookup_kind]
     target_input = "customType" if nested else "member"
+    # CustomKind.Lookup is now a `List CustomKind.TypeKind` indexed by
+    # CustomTypeRef.index; these probes reference exactly one custom type
+    # ("ProbeValue") at index 0, so a one-element list suffices. CustomType.run
+    # also gained an explicit self-index parameter (0 here), threaded only for
+    # the CustomType interpreter (Member/ParamsMember resolve by ref.index and
+    # never needed a self-index).
+    index_argument = " 0" if interpreter == "CustomType" else ""
     custom_type = (
         """
         let customType
@@ -200,13 +207,13 @@ let run =
 {custom_type}
         let lookup
             : CustomKind.Lookup
-            = \\(_ : Model.Name) -> {lookup}
+            = [ {lookup} ]
 
         in  Lude.Compiled.map
               Target.Output
               Lude.Files.Type
               (\\(_ : Target.Output) -> [] : Lude.Files.Type)
-              (Target.run interpreterConfig lookup {target_input})
+              (Target.run interpreterConfig lookup{index_argument} {target_input})
 
 in  Sdk.Sigs.generator Config Config/default run
 """
