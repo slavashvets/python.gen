@@ -43,42 +43,20 @@ let pythonKeywords =
       , "yield"
       ]
 
+let Lude = ../Deps/Lude.dhall
+
 -- Add the caller's suffix when `name` collides with one of `reserved`. Callers
 -- keep the raw name for the SQL placeholder / dict key / row[...] lookup; only
 -- the Python identifier is sanitized.
---
--- Equality without Text/equal: java.gen's escapeJavaKeyword delimiter trick does
--- not apply here because pgn's embedded Text/replace misses needles spanning a
--- text concatenation boundary (verified against the pinned pgn), so a "|"-wrapped
--- name never matches its wrapped keyword. Bare replaces do work:
--- `Text/replace name markTrue candidate` yields exactly `markTrue` only when
--- `name` equals `candidate`; any mismatch residue keeps a letter of the
--- alphabetic reserved word or grows past the digits-only marker, so it can never
--- match inside `markTrue`, the second replace maps match to `name` and mismatch
--- to `markTrue`, and the final replace rewrites `acc` on a match only.
--- Limitations: a name containing the literal marker string is corrupted by the
--- mismatch branch (the marker becomes the needle replaced in `acc`), and `acc`
--- must be read exactly once per fold step or the expression re-embeds itself at
--- every reserved word and blows up exponentially.
-let markTrue = "0000000000000000000000000001"
-
-let suffixAgainst =
-      \(suffix : Text) ->
+-- Dhall (and pgn's evaluator, as of pgn 0.11.0) has no Text/equal builtin, so
+-- Lude.Text.replaceIfOneOf gets exact-match replacement via a sentinel-wrapped
+-- Text/replace instead.
+let suffixAgainst
+    : Text -> List Text -> Text -> Text
+    = \(suffix : Text) ->
       \(reserved : List Text) ->
       \(name : Text) ->
-        List/fold
-          Text
-          reserved
-          Text
-          ( \(candidate : Text) ->
-            \(acc : Text) ->
-              let signal = Text/replace name markTrue candidate
-
-              let finalNeedle = Text/replace signal name markTrue
-
-              in  Text/replace finalNeedle (name ++ suffix) acc
-          )
-          name
+        Lude.Text.replaceIfOneOf reserved (name ++ suffix) name
 
 let sanitizeAgainst = suffixAgainst "_"
 
