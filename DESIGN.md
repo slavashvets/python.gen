@@ -157,7 +157,7 @@ directly. Statement SQL is passed as `LiteralString`. No runtime accepts encoded
 SQL bytes. The generated package has no separately installed support library;
 its only non-stdlib consumer dependency is `psycopg>=3.3.4,<4`.
 
-## 5. Configuration, mapping, and unsupported shapes
+## 5. Configuration and unsupported shapes
 
 The public Dhall config is:
 
@@ -165,14 +165,6 @@ The public Dhall config is:
 { packageName : Optional Text
 , emitSync : Optional Bool
 , onUnsupported : Optional < Fail | Skip >
-, queryNameMappings : Optional
-    (List { source : Text, target : { snakeCase : Text, pascalCase : Text } })
-, customTypeNameMappings : Optional
-    ( List
-        { source : { schema : Text, name : Text }
-        , target : { snakeCase : Text, pascalCase : Text }
-        }
-    )
 }
 ```
 
@@ -182,35 +174,25 @@ The public Dhall config is:
 - `packageName`: project name in kebab case;
 - `emitSync`: `False`;
 - `onUnsupported`: `Fail`.
-- `queryNameMappings`: `[]`;
-- `customTypeNameMappings`: `[]`.
 
 An omitted config block, an omitted field, and a `null` field therefore use the
 same fallback. Async output is present for every value of `emitSync`; only true
 adds sync output.
 
-Source-derived identifiers first receive lexical and reserved-name escaping.
-Typed mappings replace a complete query or custom-type Python identity and must
-already contain exact valid targets. After resolution, project and local
-namespace audits reject duplicate modules, functions, Row classes, custom
-types, facade exports, parameters, fields, and enum members before rendering.
-Each custom-type module also audits its class against the primitive, core, and
-custom dependency symbols it actually imports.
-Fixed core exports remain occupied. The generator never silently overwrites a
-file or assigns an order-dependent numeric suffix; see
-[ADR 0001](docs/adr/0001-generated-python-name-collisions.md).
-
-Custom-type mapping is exact only for entities preserved in the input contract.
-pgn 0.9.1 can collapse same-unqualified-name types across schemas and expose an
-unqualified `Scalar.Custom` reference. The generator cannot reconstruct the
-discarded schema identity from SQL and rejects duplicate unqualified contract
-names if they do reach it. Until upstream preserves all schema-qualified types
-and a stable qualified reference, such database shapes are unsupported.
-
-Local member audits are defensive for inputs that reach the generator. pgn may
-reject a conflicting SQL or schema spelling during analysis first. Local
-conflicts are resolved by renaming that SQL or schema source; whole-entity query
-and custom-type mappings do not apply to members.
+Source-derived identifiers receive lexical and reserved-name escaping only
+(`Structures/PyIdent.dhall`); there is no rename-mapping config and no
+generation-time namespace-collision detection. `pgn`'s embedded Dhall evaluator
+dropped `Text/equal` (pgn 0.11.0), which removed the only mechanism that could
+compare two runtime `Text` values to decide a collision or resolve a mapping's
+`source` against a query/type name; that decision is not reconstructible from
+`Text/replace` alone (see section 10). Instead, the generated package is held
+to `basedpyright --strict` returning zero errors and zero warnings; a
+duplicate dataclass field name or a name that shadows a needed type surfaces
+there (`reportRedeclaration`/`reportInvalidTypeForm`) rather than at `pgn
+generate` time, and less precisely attributed (generated Python, not the
+originating SQL/schema).
+[pgenie-io/pgenie#75](https://github.com/pgenie-io/pgenie/issues/75) asks pgn
+to guarantee unique custom-type identities at the source.
 
 `Interpreters/Primitive.dhall` maps pgn union constructors, not signature-file
 strings. Supported scalars are Boolean, integer and OID, floating point,
@@ -348,10 +330,31 @@ fixed-point filtering, registration order, file selection, and facades.
 
 ## 10. The pinned `Text/equal` constraint
 
+`pgn` 0.11.0 removed `Text/equal` (along with `Text/length` and `Bool/equal`)
+from its embedded Dhall evaluator, to stay in line with the official Dhall
+spec. There is no way to reconstruct a `Bool` or a differently-typed decision
+from comparing two arbitrary runtime `Text` values using only `Text/replace`;
+`Text/replace`-based tricks (this repository's own former keyword-marker
+trick, and gen-sdk's `Lude.Text.replaceIfEqual`/`replaceIfOneOf`) only ever
+transform text, they cannot branch into a different type. Every piece of this
+generator that made a decision this way is gone: the `queryNameMappings`/
+`customTypeNameMappings` rename-mapping config
+(`Structures/PythonNameMapping.dhall`, matched a mapping's `source` against a
+runtime name), `validateCustomTypeIdentities` (rejected two custom types
+collapsing to the same unqualified contract `Name`), and
+`Structures/PythonNamespace.dhall`'s `validate` (4 call sites in
+`Interpreters/Project.dhall`: per-query and per-custom-type local audits, the
+project-wide facade/module audit, and per-type module-internal bindings).
+[pgenie-io/pgenie#75](https://github.com/pgenie-io/pgenie/issues/75) asks pgn
+to guarantee unique custom-type identities at the source instead. The
+generated package's `basedpyright --strict` gate (see section 12) is now the
+only backstop against a Python name collision reaching a consumer.
+
 `buildLookup` intentionally remains in `Interpreters/Project.dhall`. It compares
 a custom reference's snake-case name with the project custom type name using
 `Text/equal`. That builtin belongs to pgn's embedded Dhall fork and is not
-available in upstream standard Dhall.
+available in upstream standard Dhall. It is, as of this writing, the only
+remaining `Text/equal` use anywhere in `src/` — a repo-wide grep confirms it.
 
 The dependency is pinned and explicit. The complete fixture needs fork-aware
 evaluation solely because it invokes this generator and the local `buildLookup`
@@ -362,9 +365,10 @@ text equality, that prevents pgn 0.9.1 from collapsing same-unqualified-name
 types across schemas. Until then, pgn and CI's pinned fork-aware action are the
 supported evaluators, and cross-schema duplicate type names are unsupported.
 
-`PyIdent.dhall` uses its separate `Text/replace` marker construction for keyword
-membership. `ImportSet.dhall` uses natural project indexes for equality,
-deduplication, and ordering. Neither substitutes for the project lookup.
+`PyIdent.dhall` uses `Lude.Text.replaceIfOneOf`'s bounded `Text/replace`
+construction for keyword membership. `ImportSet.dhall` uses natural project
+indexes for equality, deduplication, and ordering. Neither substitutes for the
+project lookup.
 
 ## 11. Taking ownership
 

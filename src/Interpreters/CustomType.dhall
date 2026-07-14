@@ -8,10 +8,6 @@ let ImportSet = ../Structures/ImportSet.dhall
 
 let CustomKind = ../Structures/CustomKind.dhall
 
-let PythonNameMapping = ../Structures/PythonNameMapping.dhall
-
-let PythonNamespace = ../Structures/PythonNamespace.dhall
-
 let PyIdent = ../Structures/PyIdent.dhall
 
 let MemberGen = ./Member.dhall
@@ -20,9 +16,7 @@ let EnumModule = ../Templates/EnumModule.dhall
 
 let CompositeModule = ../Templates/CompositeModule.dhall
 
-let Config =
-      { customTypeNameMappings : List PythonNameMapping.CustomType
-      }
+let Config = {}
 
 let Input = Model.CustomType
 
@@ -38,7 +32,6 @@ let Output =
       , kind : TypeKind
       , order : Natural
       , dependencies : List Natural
-      , moduleBindings : List PythonNamespace.Binding
       }
 
 let renderExtraImports =
@@ -77,100 +70,14 @@ let renderExtraImports =
               )
             # customLines
 
-let moduleNamespace =
-      \(input : Input) ->
-        "custom type module for schema ${Text/show input.pgSchema}, type ${Text/show input.pgName}"
-
-let moduleBinding =
-      \(namespace : Text) ->
-      \(owner : Text) ->
-      \(name : Text) ->
-        { namespace
-        , owner
-        , name
-        , remediation = "Choose a different custom type name mapping target"
-        }
-
-let enumNamespaceBindings =
-      \(input : Input) ->
-      \(typeName : Text) ->
-        let namespace = moduleNamespace input
-
-        in  [ moduleBinding
-                namespace
-                "custom type class for schema ${Text/show input.pgSchema}, type ${Text/show input.pgName}"
-                typeName
-            , moduleBinding namespace "enum base import" "StrEnum"
-            ]
-
-let compositeNamespaceBindings =
-      \(input : Input) ->
-      \(typeName : Text) ->
-      \(imports : ImportSet.Type) ->
-        let namespace = moduleNamespace input
-
-        let imported =
-                ( if    imports.uuid
-                  then  [ moduleBinding namespace "UUID primitive import" "UUID" ]
-                  else  [] : List PythonNamespace.Binding
-                )
-              # ( if    imports.datetime
-                  then  [ moduleBinding namespace "datetime primitive import" "datetime" ]
-                  else  [] : List PythonNamespace.Binding
-                )
-              # ( if    imports.date
-                  then  [ moduleBinding namespace "date primitive import" "date" ]
-                  else  [] : List PythonNamespace.Binding
-                )
-              # ( if    imports.time
-                  then  [ moduleBinding namespace "time primitive import" "time" ]
-                  else  [] : List PythonNamespace.Binding
-                )
-              # ( if    imports.timedelta
-                  then  [ moduleBinding namespace "timedelta primitive import" "timedelta" ]
-                  else  [] : List PythonNamespace.Binding
-                )
-              # ( if    imports.decimal
-                  then  [ moduleBinding namespace "Decimal primitive import" "Decimal" ]
-                  else  [] : List PythonNamespace.Binding
-                )
-              # ( if    imports.jsonValue
-                  then  [ moduleBinding namespace "generated core import" "JsonValue" ]
-                  else  [] : List PythonNamespace.Binding
-                )
-
-        let customImports =
-              Prelude.List.map
-                ImportSet.CustomImport
-                PythonNamespace.Binding
-                ( \(custom : ImportSet.CustomImport) ->
-                    moduleBinding
-                      namespace
-                      "custom dependency import \".${custom.moduleName}.${custom.className}\""
-                      custom.className
-                )
-                imports.customTypes
-
-        in    [ moduleBinding
-                  namespace
-                  "custom type class for schema ${Text/show input.pgSchema}, type ${Text/show input.pgName}"
-                  typeName
-              , moduleBinding namespace "dataclass decorator import" "dataclass"
-              ]
-            # imported
-            # customImports
-
 let run =
       \(config : Config) ->
       \(lookup : CustomKind.Lookup) ->
       \(input : Input) ->
         let pythonName =
-              PythonNameMapping.resolveCustomType
-                config.customTypeNameMappings
-                { schema = input.pgSchema, name = input.pgName }
-                { snakeCase = PyIdent.typeModuleSafeName input.name.inSnakeCase
-                , pascalCase = PyIdent.pySafeName input.name.inPascalCase
-                }
+              { snakeCase = PyIdent.typeModuleSafeName input.name.inSnakeCase
+              , pascalCase = PyIdent.pySafeName input.name.inPascalCase
+              }
 
         let typeName = pythonName.pascalCase
 
@@ -210,8 +117,6 @@ let run =
                                   , kind = TypeKind.Enum
                                   , order = identity.order
                                   , dependencies = [] : List Natural
-                                  , moduleBindings =
-                                      enumNamespaceBindings input typeName
                                   }
                           , Composite =
                               \(_ : CustomKind.Identity) ->
@@ -306,11 +211,6 @@ let run =
                                           , kind = TypeKind.Composite
                                           , order = identity.order
                                           , dependencies
-                                          , moduleBindings =
-                                              compositeNamespaceBindings
-                                              input
-                                              typeName
-                                              combinedImports
                                           }
                                   , Enum =
                                       \(_ : CustomKind.Identity) ->
