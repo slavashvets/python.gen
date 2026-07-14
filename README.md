@@ -249,9 +249,14 @@ at a time, and rerun the harness. The release workflow resolves
 wheel from those exact bytes. The wheel exposes path, URL, and vendor commands;
 PyPI publication remains disabled until its explicit release gate is enabled.
 
-`fixtures/Exhaustive.dhall` is the contract fixture. It and `buildLookup` rely
-on the pgn fork's `Text/equal` builtin, so the standard upstream Dhall evaluator
-cannot run the complete contract path. CI uses the pinned fork-aware action.
+`fixtures/Exhaustive.dhall` is the contract fixture. The generator no longer
+depends on the pgn fork's `Text/equal` builtin at all: the custom-type removal
+cascade that was the last user (`buildLookup`) has been replaced by gen-sdk's
+`CustomTypes` module, which resolves references by their contract-supplied
+`CustomTypeRef.index` instead of by name comparison. `pgn` itself remains the
+supported evaluator and generation driver (CI invokes `pgn generate`), and it
+requires the contract's topological `customTypes` ordering that gen-contract
+v5 guarantees.
 
 ## Provenance and license
 

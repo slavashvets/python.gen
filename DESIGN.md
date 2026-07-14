@@ -257,25 +257,31 @@ postprocessor rewrites generated files.
 ```text
 optional config
   -> resolved config
-  -> buildLookup(custom types)
-  -> fixed-point custom-type filtering in Skip mode
-  -> compile custom types and query checks
+  -> index-aligned kind classification (kindOf) of every custom type
+  -> one-pass survivor cascade (Sdk.CustomTypes.supportedCustomTypesReasoned)
+     masking unsupported indices to Absent in Skip mode
+  -> compile custom types and query checks against the masked lookup
   -> dependency-first registration order
   -> render facades, core, runtimes, types, registration, and statements
   -> prepend the generated header
 ```
 
 `onUnsupported: Fail` traverses the original project and propagates the first
-compiled failure, so generation aborts without a partial client.
+compiled failure, so generation aborts without a partial client. In this mode
+nothing is masked: the lookup is the full, unmasked kind classification.
 
-`onUnsupported: Skip` repeatedly rebuilds `buildLookup` from the surviving
-custom types and removes any type that no longer compiles. It then compiles
-queries against the final lookup. A removed type therefore also removes its
-dependent composites and statements. Facade exports, type initializers,
-registration entries, statement files, and Row exports are assembled only from
-survivors. Reports for dropped units are preserved as warnings. The bounded
-fixed point can only remove candidates, so it terminates after at most the
-original custom-type count.
+`onUnsupported: Skip` computes survivorship in a single left-fold via
+`Sdk.CustomTypes.supportedCustomTypesReasoned`. Because `Project.customTypes`
+is topologically sorted (every referenced index precedes the referencing type),
+one pass suffices: the fold marks a type unsupported if its own definition
+cannot compile (`ownDefinitionSupported`) or if any custom type it references
+was already marked unsupported. Unsupported indices are then masked to `Absent`
+in the kind lookup, so a reference to a removed type reads exactly like a
+missing type. Queries compile against that same masked lookup, so a removed type
+also removes its dependent composites and statements. Facade exports, type
+initializers, registration entries, statement files, and Row exports are
+assembled only from survivors, and reports for dropped units are preserved as
+warnings.
 
 Query compilation is deliberately consolidated in `QueryCheck`: keep/drop state
 and warning data come from one literal `QueryGen.run` call site before the final
@@ -350,20 +356,21 @@ to guarantee unique custom-type identities at the source instead. The
 generated package's `basedpyright --strict` gate (see section 12) is now the
 only backstop against a Python name collision reaching a consumer.
 
-`buildLookup` intentionally remains in `Interpreters/Project.dhall`. It compares
-a custom reference's snake-case name with the project custom type name using
-`Text/equal`. That builtin belongs to pgn's embedded Dhall fork and is not
-available in upstream standard Dhall. It is, as of this writing, the only
-remaining `Text/equal` use anywhere in `src/` — a repo-wide grep confirms it.
+`buildLookup` — the last `Text/equal` user, which compared a reference's
+snake-case name against each project custom type's name — has been removed.
+gen-contract v5's `CustomTypeRef` carries an `index` into `Project.customTypes`,
+and gen-sdk v3's `CustomTypes` module folds over that topologically-sorted list
+to compute survivorship without any text comparison. References now resolve by
+index (`Structures/CustomKind.dhall`'s `at`), so a repo-wide `grep -rn
+"Text/equal" src/` finds only these explanatory comments — no live use remains.
 
-The dependency is pinned and explicit. The complete fixture needs fork-aware
-evaluation solely because it invokes this generator and the local `buildLookup`
-uses `Text/equal`. The upstream exit must preserve every schema-qualified
-`customTypes` entry and put a stable qualified identifier, or a project index
-with equivalent identity, on each custom scalar reference. Besides removing
-text equality, that prevents pgn 0.9.1 from collapsing same-unqualified-name
-types across schemas. Until then, pgn and CI's pinned fork-aware action are the
-supported evaluators, and cross-schema duplicate type names are unsupported.
+The generator no longer needs fork-only text equality anywhere. It does still
+rely on gen-contract v5's contract guarantees: every `CustomTypeRef.index` must
+address the intended `customTypes` entry, and `customTypes` must be
+topologically sorted (every referenced index precedes the referencing type),
+which is what makes the single-pass survivor cascade sound. `pgn` remains the
+supported evaluator and generation driver; upholding those index/ordering
+invariants is the producer's responsibility.
 
 `PyIdent.dhall` uses `Lude.Text.replaceIfOneOf`'s bounded `Text/replace`
 construction for keyword membership. `ImportSet.dhall` uses natural project

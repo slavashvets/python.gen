@@ -1,5 +1,13 @@
 # Upcoming
 
+- Bumped the pins to gen-contract v5.0.0 and gen-sdk v3.0.0 (requires `pgn`
+  v0.12.0). Replaced the hand-rolled `buildLookup` custom-kind resolver and its
+  fixed-point removal cascade with gen-sdk's `CustomTypes` module: references
+  now resolve by the contract's `CustomTypeRef.index` and `onUnsupported: Skip`
+  computes survivorship in a single left-fold over the topologically-sorted
+  `customTypes`. This retires the generator's last `Text/equal` use, so no live
+  `Text/equal` call remains anywhere in `src/`.
+
 - Removed the `queryNameMappings`/`customTypeNameMappings` rename-mapping
   config and all generation-time Python namespace-collision detection
   (project-wide facade/module, per-query, per-custom-type, and per-type
@@ -33,22 +41,20 @@
   ranks, composite ranks, custom-array fields inside composites, and missing or
   unsupported custom types fail loudly.
 
-- Retained `buildLookup` as the project-wide custom-kind resolver for identities
-  preserved in the contract. Its `Text/equal` use is an explicit pgn-fork
-  constraint. The planned exit must preserve every schema-qualified custom type
-  entry and expose a stable qualified identifier on `Scalar.Custom`; kind alone
-  is insufficient. pgn 0.9.1 can collapse same-unqualified-name types across
-  schemas, so that database shape remains unsupported and cannot be repaired by
-  a Python mapping. Natural project indexes now provide deterministic
-  custom-import deduplication and ordering.
-  Query, parameter, field, and private statement names are collision-safe while
-  SQL names remain unchanged.
+- Resolved custom-type references by their contract-supplied
+  `CustomTypeRef.index` (gen-contract v5) rather than by name comparison, so a
+  reference carries a stable schema-qualified identity (`pgSchema`/`pgName`)
+  directly. Same-unqualified-name types across schemas therefore no longer
+  collapse. Natural project indexes provide deterministic custom-import
+  deduplication and ordering. Query, parameter, field, and private statement
+  names are collision-safe while SQL names remain unchanged.
 
 - Kept `onUnsupported: Fail | Skip`. `Fail` aborts generation with the nested
-  report. `Skip` preserves warnings and computes a bounded fixed point that
-  removes an unsupported custom type, its dependent custom types and statements,
-  and all affected type, registration, facade, Row, and statement entries. The
-  surviving package remains strict-importable.
+  report. `Skip` preserves warnings and computes survivorship in a single
+  left-fold over the topologically-sorted `customTypes`, removing an unsupported
+  custom type, its dependent custom types and statements, and all affected type,
+  registration, facade, Row, and statement entries. The surviving package
+  remains strict-importable.
 
 - Established the generated tree as a greenfield layout with no compatibility
   layer or promise for internal generated paths. Every generated Python file now

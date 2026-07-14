@@ -32,16 +32,17 @@ codecs. The lookup classification instead drives support-shape validation,
 custom imports and dependencies, and dependency-first psycopg adapter
 registration. See `DESIGN.md`, sections 3, 5, and 8.
 
-`Interpreters/Project.dhall` currently implements `buildLookup` by comparing a
-custom reference's snake-case name with each project custom type through
-`Text/equal`. This local lookup is the generator's sole need for that
-pgn-specific builtin, but the unqualified comparison also exposes an upstream
-identity gap.
+This ask has since been addressed by gen-contract v5.0.0 (see below). For
+history: `Interpreters/Project.dhall` formerly implemented `buildLookup` by
+comparing a custom reference's snake-case name with each project custom type
+through `Text/equal`, which was the generator's sole need for that pgn-specific
+builtin; the unqualified comparison also exposed an upstream identity gap. That
+lookup has been removed — references now resolve by `CustomTypeRef.index`.
 
-With pgn 0.9.1, a project containing `alpha.status` and `beta.status` can arrive
-with only one `customTypes` entry, while both uses are represented by the same
-unqualified `Scalar.Custom Name`. A Python mapping cannot recover the discarded
-schema or safely repair annotations and adapter registration.
+Before gen-contract v5, a project containing `alpha.status` and `beta.status`
+could arrive with only one `customTypes` entry, while both uses were represented
+by the same unqualified `Scalar.Custom Name`. A Python mapping cannot recover a
+discarded schema or safely repair annotations and adapter registration.
 
 The upstream ask has two inseparable parts:
 
