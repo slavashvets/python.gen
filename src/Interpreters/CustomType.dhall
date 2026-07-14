@@ -239,18 +239,14 @@ let run =
                                       \(_ : Model.Primitive) ->
                                         MemberGen.run {=} lookup m
                                   , Custom =
-                                      \(name : Model.Name) ->
-                                        Prelude.Optional.fold
-                                          Model.ArraySettings
-                                          m.value.arraySettings
-                                          (Lude.Compiled.Type MemberGen.Output)
-                                          ( \(_ : Model.ArraySettings) ->
-                                              Lude.Compiled.report
+                                      \(ref : Model.CustomTypeRef) ->
+                                        if    Prelude.Bool.not
+                                                (Natural/isZero m.value.dimensionality)
+                                        then  Lude.Compiled.report
                                                 MemberGen.Output
-                                                [ m.pgName, name.inSnakeCase ]
+                                                [ m.pgName, ref.name.inSnakeCase ]
                                                 "Custom array fields inside a composite type are not supported"
-                                          )
-                                          (MemberGen.run {=} lookup m)
+                                        else  MemberGen.run {=} lookup m
                                   }
                                   m.value.scalar
                             )

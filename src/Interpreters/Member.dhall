@@ -49,10 +49,10 @@ let runWithPrefix =
                             }
                       , Custom =
                           Prelude.Optional.fold
-                            Model.Name
+                            Model.CustomTypeRef
                             value.scalar.customRef
                             (Lude.Compiled.Type Output)
-                            ( \(name : Model.Name) ->
+                            ( \(ref : Model.CustomTypeRef) ->
                                 let mkOutput =
                                       \(identity : CustomKind.Identity) ->
                                       \(customImports : ImportSet.Type) ->
@@ -87,7 +87,7 @@ let runWithPrefix =
                                                 else  Lude.Compiled.report
                                                         Output
                                                         [ input.pgName
-                                                        , name.inSnakeCase
+                                                        , ref.name.inSnakeCase
                                                         ]
                                                         "Array of an enum with dimensionality > 2 is not supported"
                                       , Composite =
@@ -104,16 +104,16 @@ let runWithPrefix =
                                             else  Lude.Compiled.report
                                                     Output
                                                     [ input.pgName
-                                                    , name.inSnakeCase
+                                                    , ref.name.inSnakeCase
                                                     ]
                                                     "Array of a composite type with dimensionality > 1 is not supported"
                                       , Absent =
                                           Lude.Compiled.report
                                             Output
-                                            [ name.inSnakeCase ]
+                                            [ ref.name.inSnakeCase ]
                                             "Custom type not found in project customTypes"
                                       }
-                                      (lookup name)
+                                      (lookup ref.name)
                             )
                             ( Lude.Compiled.report
                                 Output

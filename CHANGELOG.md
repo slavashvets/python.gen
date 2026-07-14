@@ -90,3 +90,8 @@
   and wheel are GPL-3.0-or-later because they inline gen-sdk. The wheel includes
   the sha256-pinned GPL text and `wheel/NOTICE`; PyPI publication remains
   disabled behind its explicit gate.
+
+- Bumped gen-contract to v5.0.0 and gen-sdk to v3.0.0. `Scalar.Custom` now
+  carries a `CustomTypeRef` (name, pgSchema, pgName, index) instead of a bare
+  `Name`, and `Value` flattens its optional array wrapper into plain
+  `dimensionality`/`elementIsNullable` fields.
