@@ -62,13 +62,16 @@ Query and custom-type identifiers are derived directly from their PostgreSQL
 source names (sanitized for Python syntax and reserved words only); a schema
 that maps two different SQL entities onto the same Python identifier will not
 be caught by `pgn generate`. Instead, the generated package is held to
-`basedpyright --strict` with zero errors and zero warnings; a genuine
-collision typically surfaces there as `reportRedeclaration` or
-`reportInvalidTypeForm`, pointing at the generated Python rather than the
-original SQL/schema source. Renaming the conflicting SQL or schema entity is
-the fix. [pgenie-io/pgenie#75](https://github.com/pgenie-io/pgenie/issues/75)
-asks pgn to guarantee unique custom-type identities at the source, which would
-let a future version of this generator catch such collisions earlier again.
+`basedpyright --strict` with zero errors and zero warnings. Collisions that
+remain visible in the generated tree typically surface there as
+`reportRedeclaration` or `reportInvalidTypeForm`, pointing at the generated
+Python rather than the original SQL/schema source. That gate cannot detect a
+module-path collision after one generated file has overwritten another, so
+Python-name uniqueness remains an input-schema requirement. Renaming the
+conflicting SQL or schema entity is the fix.
+[pgenie-io/pgenie#75](https://github.com/pgenie-io/pgenie/issues/75) asks pgn
+to guarantee unique custom-type identities at the source, which would let a
+future version of this generator catch such collisions earlier again.
 
 ## Generated package
 

@@ -1,9 +1,10 @@
 # Upstream resolution status: pgn and gen-sdk
 
 This brief records the current status of three upstream integration points.
-The pgn annotation-metadata and warning-surfacing issues are closed and shipped.
-Only the custom-type identity request remains actionable. Architecture details
-stay in `DESIGN.md`.
+The first two issues are closed and shipped. The qualified custom-type identity
+gap is addressed by gen-contract v5, while the broader normalized-name
+guarantee remains open in pgenie issue 75. Architecture details stay in
+`DESIGN.md`.
 
 ## 1. pgn annotation metadata: resolved
 
@@ -24,7 +25,7 @@ With `onUnsupported: Skip`, the generator retains a report for every dropped
 unit while a single-pass survivor fold removes unsupported custom types, their
 dependents, and affected statements. See `DESIGN.md`, section 8.
 
-## 3. Preserve qualified custom-type identity: actionable
+## 3. Preserve qualified custom-type identity: contract support shipped
 
 Project-wide custom-type lookup classifies every custom reference as an enum,
 composite, or absent. Shipped models are pure declarations with no class
@@ -37,7 +38,9 @@ history: `Interpreters/Project.dhall` formerly implemented `buildLookup` by
 comparing a custom reference's snake-case name with each project custom type
 through `Text/equal`, which was the generator's sole need for that pgn-specific
 builtin; the unqualified comparison also exposed an upstream identity gap. That
-lookup has been removed — references now resolve by `CustomTypeRef.index`.
+lookup has been removed, references now resolve by `CustomTypeRef.index`.
+Generated Python class and module names still use the unqualified contract
+name, so gen-contract v5 does not itself prevent normalized-name collisions.
 
 Before gen-contract v5, a project containing `alpha.status` and `beta.status`
 could arrive with only one `customTypes` entry, while both uses were represented
@@ -55,6 +58,6 @@ not enough. The qualified reference lets lookup use an equality-free structural
 match and removes the local `Text/equal` dependency described in `DESIGN.md`,
 section 10.
 
-Changing `Scalar.Custom` affects gen-sdk consumers. This repository pins its
-gen-sdk import by sha256, so adopting such a change would require an explicit
-pin update and a full harness run.
+Changing `Scalar.Custom` affects gen-sdk consumers. This repository adopted the
+new shape through explicit sha256 pin updates to gen-contract v5 and gen-sdk v3
+and verified it with the full harness.

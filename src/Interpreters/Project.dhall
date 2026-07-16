@@ -76,10 +76,7 @@ let IndexedCustomType = { index : Natural, value : Model.CustomType }
 let LookupKind = < Composite | Enum | Domain >
 
 let LookupEntry =
-      { contractName : Text
-      , kind : LookupKind
-      , identity : CustomKind.Identity
-      }
+      { kind : LookupKind, identity : CustomKind.Identity }
 
 let ResolvedCustomType =
       { value : Model.CustomType, lookupEntry : LookupEntry }
@@ -113,11 +110,7 @@ let resolveCustomTypes =
                       customType.definition
 
               in  { value = customType
-                  , lookupEntry =
-                      { contractName = customType.name.inSnakeCase
-                      , kind
-                      , identity
-                      }
+                  , lookupEntry = { kind, identity }
                   }
           )
           (Prelude.List.indexed Model.CustomType customTypes)

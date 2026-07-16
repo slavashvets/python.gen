@@ -14,10 +14,10 @@
   module-internal audits). `pgn` 0.11.0 dropped the `Text/equal` builtin these
   relied on to compare two runtime `Text` values, and there is no
   `Text/replace`-based way to reconstruct that decision. A colliding schema is
-  no longer caught at `pgn generate`; it now fails the generated package's
-  `basedpyright --strict` gate instead (`reportRedeclaration` or
-  `reportInvalidTypeForm`), pointing at the generated Python rather than the
-  originating SQL/schema.
+  no longer caught at `pgn generate`. Collisions that remain visible in the
+  generated tree generally fail the package's `basedpyright --strict` gate
+  (`reportRedeclaration` or `reportInvalidTypeForm`), but a module-path
+  collision can overwrite an earlier file before the checker sees it.
   [pgenie-io/pgenie#75](https://github.com/pgenie-io/pgenie/issues/75) asks pgn
   to guarantee unique custom-type identities at the source.
 
@@ -44,10 +44,12 @@
 - Resolved custom-type references by their contract-supplied
   `CustomTypeRef.index` (gen-contract v5) rather than by name comparison, so a
   reference carries a stable schema-qualified identity (`pgSchema`/`pgName`)
-  directly. Same-unqualified-name types across schemas therefore no longer
-  collapse. Natural project indexes provide deterministic custom-import
-  deduplication and ordering. Query, parameter, field, and private statement
-  names are collision-safe while SQL names remain unchanged.
+  directly. Same-unqualified-name types across schemas no longer collapse
+  during reference resolution. Generated class and module names still come
+  from the unqualified contract name, so their Python names must remain unique.
+  Natural project indexes provide deterministic custom-import deduplication and
+  ordering. Reserved helper and keyword conflicts are escaped while SQL names
+  remain unchanged.
 
 - Kept `onUnsupported: Fail | Skip`. `Fail` aborts generation with the nested
   report. `Skip` preserves warnings and computes survivorship in a single
@@ -101,13 +103,3 @@
   and wheel are GPL-3.0-or-later because they inline gen-sdk. The wheel includes
   the sha256-pinned GPL text and `wheel/NOTICE`; PyPI publication remains
   disabled behind its explicit gate.
-
-- Bumped gen-contract to v5.0.0 and gen-sdk to v3.0.0. `Scalar.Custom` now
-  carries a `CustomTypeRef` (name, pgSchema, pgName, index) instead of a bare
-  `Name`, and `Value` flattens its optional array wrapper into plain
-  `dimensionality`/`elementIsNullable` fields.
-
-- Bumped the pinned `pgn` tool to v0.12.0 (from v0.9.1), required for the
-  gen-contract v5.0.0 support above. `pgn` 0.11.0, a prerequisite, dropped the
-  `Text/equal`/`Text/length`/`Bool/equal` builtins from its embedded Dhall
-  evaluator to stay in line with the official Dhall spec.

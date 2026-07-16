@@ -9,9 +9,7 @@
 -- those statements/types are dropped with a warning instead of aborting the
 -- whole compile.
 --
--- CI evaluates this fixture with the pinned fork-aware directory-tree action.
--- Standard `dhall to-directory-tree` cannot evaluate the pgn fork's Text/equal
--- builtin used by the generator.
+-- CI evaluates this fixture with its pinned directory-tree action.
 let Sdk = ../src/Deps/Sdk.dhall
 
 let Gen = ../src/package.dhall

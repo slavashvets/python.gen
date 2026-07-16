@@ -186,11 +186,13 @@ dropped `Text/equal` (pgn 0.11.0), which removed the only mechanism that could
 compare two runtime `Text` values to decide a collision or resolve a mapping's
 `source` against a query/type name; that decision is not reconstructible from
 `Text/replace` alone (see section 10). Instead, the generated package is held
-to `basedpyright --strict` returning zero errors and zero warnings; a
-duplicate dataclass field name or a name that shadows a needed type surfaces
-there (`reportRedeclaration`/`reportInvalidTypeForm`) rather than at `pgn
-generate` time, and less precisely attributed (generated Python, not the
-originating SQL/schema).
+to `basedpyright --strict` returning zero errors and zero warnings. A duplicate
+dataclass field name or a name that shadows a needed type surfaces there
+(`reportRedeclaration`/`reportInvalidTypeForm`) rather than at `pgn generate`
+time, and less precisely attributed (generated Python, not the originating
+SQL/schema). A module-path collision can overwrite an earlier generated file
+before the type checker runs, so input schemas must still guarantee unique
+generated Python names.
 [pgenie-io/pgenie#75](https://github.com/pgenie-io/pgenie/issues/75) asks pgn
 to guarantee unique custom-type identities at the source.
 
@@ -354,16 +356,17 @@ collapsing to the same unqualified contract `Name`), and
 project-wide facade/module audit, and per-type module-internal bindings).
 [pgenie-io/pgenie#75](https://github.com/pgenie-io/pgenie/issues/75) asks pgn
 to guarantee unique custom-type identities at the source instead. The
-generated package's `basedpyright --strict` gate (see section 12) is now the
-only backstop against a Python name collision reaching a consumer.
+generated package's `basedpyright --strict` gate (see section 12) catches
+collisions that remain visible in the output tree. It cannot detect an earlier
+file that was overwritten at the same generated module path.
 
-`buildLookup` — the last `Text/equal` user, which compared a reference's
-snake-case name against each project custom type's name — has been removed.
+`buildLookup`, the last `Text/equal` user, compared a reference's snake-case
+name against each project custom type's name and has been removed.
 gen-contract v5's `CustomTypeRef` carries an `index` into `Project.customTypes`,
 and gen-sdk v3's `CustomTypes` module folds over that topologically-sorted list
 to compute survivorship without any text comparison. References now resolve by
 index (`Structures/CustomKind.dhall`'s `at`), so a repo-wide `grep -rn
-"Text/equal" src/` finds only these explanatory comments — no live use remains.
+"Text/equal" src/` finds only these explanatory comments. No live use remains.
 
 The generator no longer needs fork-only text equality anywhere. It does still
 rely on gen-contract v5's contract guarantees: every `CustomTypeRef.index` must
