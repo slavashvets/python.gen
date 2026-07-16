@@ -1,47 +1,105 @@
 # Upcoming
 
-- The test harness now runs every pgn subprocess in its own process group under
-  an RSS watchdog: a thread polls `ps -o rss=` every 2 s and, on breach of
-  `PGN_MAX_RSS_GB` (default 40 GB), kills the whole group and fails the test with
-  the observed RSS. A single-artifact generate peaks ~35 GB on the reference
-  machine; an unbounded run once hit ~80 GB and had to be emergency-killed, so
-  the budget keeps a runaway generate from taking down the host.
-- Emitted packages gained a surface-agnostic `_generated/_core.py` that owns the
-  shared names (the `JsonValue` alias, `NoRowError`, a new `DecodeError`, and the
-  `require_array` decode guard) with no I/O. Both `_runtime.py` modules are now
-  I/O-only and re-export `JsonValue`/`NoRowError`/`require_array` from `_core` so
-  off-contract `from ._runtime import ...` keeps working; `_rows.py`, the
-  statement modules, and the facades import the shared names from `_core`
-  directly.
-- The release wheel now ships its GPL compliance files inside the artifact:
-  the build fetches the GPLv3 text into `COPYING` (sha256-pinned) and bundles
-  the committed `wheel/NOTICE` describing the composition; both land in
-  `dist-info/licenses` and the release job asserts their presence in the
-  wheel and the sdist. The repository LICENSE (MIT) is no longer copied into
-  the wheel, where it misstated the artifact's license.
-- Emitted files now carry REUSE-style SPDX header lines
-  (`SPDX-FileCopyrightText`, `SPDX-License-Identifier: MIT-0`) right after
-  the `@generated` marker: license scanners in consuming projects see a
-  standard permissive id for the generated code instead of guessing its
-  provenance.
-- Added a `pgenie-python-gen` wheel channel (`wheel/`): the release build bundles
-  the resolved generator as an installable package with a `path`/`url`/`vendor`
-  CLI; publication to PyPI ships wired but disabled.
-- Keyword escaping (`PyIdent.dhall`) no longer needs the fork-only
-  `Text/equal` builtin; it's rewritten against a `Text/replace`-based marker
-  trick, since pgn's embedded `Text/replace` doesn't match a needle spanning
-  a concatenation boundary, which is what the java.gen-style delimiter trick
-  relied on.
-- The generator config is now fully optional, folded through a single
-  defaults record in `compile.dhall` (`packageName` from the project name,
-  `emitSync` off, `onUnsupported` `Fail`). A project can omit `config:`
-  entirely, pass `config: {}`, or set any subset of the keys.
-- gen-sdk pinned to `v0.10.2`.
-- Fixed single-field composite param binding: it rendered as `(x.field)`,
-  parentheses around a bare expression, not a one-element Python tuple.
-  Now renders `(x.field,)`. Covered by a dedicated fixture composite
-  (`tag_value`) exercised as both a param and a result column.
-- Added `onUnsupported: Fail | Skip`. `Fail` (default) is the existing
-  loud-abort behavior. `Skip` drops the smallest self-consistent unit (a
-  statement or a custom type, cascading to anything that references it) and
-  keeps generating the rest.
+- Bumped the pins to gen-contract v5.0.0 and gen-sdk v3.0.0 (requires `pgn`
+  v0.12.0). Replaced the hand-rolled `buildLookup` custom-kind resolver and its
+  fixed-point removal cascade with gen-sdk's `CustomTypes` module: references
+  now resolve by the contract's `CustomTypeRef.index` and `onUnsupported: Skip`
+  computes survivorship in a single left-fold over the topologically-sorted
+  `customTypes`. This retires the generator's last `Text/equal` use, so no live
+  `Text/equal` call remains anywhere in `src/`.
+
+- Removed the `queryNameMappings`/`customTypeNameMappings` rename-mapping
+  config and all generation-time Python namespace-collision detection
+  (project-wide facade/module, per-query, per-custom-type, and per-type
+  module-internal audits). `pgn` 0.11.0 dropped the `Text/equal` builtin these
+  relied on to compare two runtime `Text` values, and there is no
+  `Text/replace`-based way to reconstruct that decision. A colliding schema is
+  no longer caught at `pgn generate`. Collisions that remain visible in the
+  generated tree generally fail the package's `basedpyright --strict` gate
+  (`reportRedeclaration` or `reportInvalidTypeForm`), but a module-path
+  collision can overwrite an earlier file before the checker sees it.
+  [pgenie-io/pgenie#75](https://github.com/pgenie-io/pgenie/issues/75) asks pgn
+  to guarantee unique custom-type identities at the source.
+
+- Finalized one additive package surface. Async functions remain at the package
+  root for every configuration. `emitSync: true` adds `<package>.sync`, a sync
+  runtime, and adjacent sync functions in the same canonical statement modules.
+  SQL, Row classes, custom types, core errors, and registration stay shared, so
+  async and sync facades expose exact model identities.
+
+- Moved PostgreSQL conversion to psycopg's class-aware adapters. Generated enums
+  are pure `StrEnum` classes, composites and statement rows are frozen slotted
+  dataclasses, and `args_row` constructs each canonical Row positionally through
+  `BaseRowFactory`. `EnumInfo`/`register_enum` and
+  `CompositeInfo`/`register_composite` register generated classes in
+  dependency-first order. Statement SQL remains one `LiteralString`; generated
+  output has no query decoders, model codecs, casts, or bytes SQL.
+
+- Completed custom-type coverage for scalar enums, enum arrays through rank 2,
+  scalar composite load and dump, rank-1 composite arrays, nested scalar
+  composites, nullable members, and sanitized identifiers. Unsupported enum
+  ranks, composite ranks, custom-array fields inside composites, and missing or
+  unsupported custom types fail loudly.
+
+- Resolved custom-type references by their contract-supplied
+  `CustomTypeRef.index` (gen-contract v5) rather than by name comparison, so a
+  reference carries a stable schema-qualified identity (`pgSchema`/`pgName`)
+  directly. Same-unqualified-name types across schemas no longer collapse
+  during reference resolution. Generated class and module names still come
+  from the unqualified contract name, so their Python names must remain unique.
+  Natural project indexes provide deterministic custom-import deduplication and
+  ordering. Reserved helper and keyword conflicts are escaped while SQL names
+  remain unchanged.
+
+- Kept `onUnsupported: Fail | Skip`. `Fail` aborts generation with the nested
+  report. `Skip` preserves warnings and computes survivorship in a single
+  left-fold over the topologically-sorted `customTypes`, removing an unsupported
+  custom type, its dependent custom types and statements, and all affected type,
+  registration, facade, Row, and statement entries. The surviving package
+  remains strict-importable.
+
+- Established the generated tree as a greenfield layout with no compatibility
+  layer or promise for internal generated paths. Every generated Python file now
+  begins with the exact marker
+  `# @generated by python.gen (pGenie); regeneration overwrites manual changes.`
+  followed by REUSE copyright and MIT-0 SPDX lines. Takeover contract tests pin
+  the marker and greenfield layout. Consumers must disable regeneration and
+  replace the marker before treating the files as owned Python.
+
+- Added Ruff check and format gates, authored and SQL line-length gates, raw
+  output checks with no postformat step, public identity checks, import-boundary
+  checks, adapter AST checks, and async/sync PostgreSQL round trips. Final
+  evidence: H1 CONFIRM with psycopg 3.3.4, consumer `psycopg>=3.3.4,<4`,
+  class-aware adapters, pure models, canonical `args_row` Rows, and no query
+  decoders, model codecs, casts, or bytes SQL. H2 CONFIRM: 25 Python files /
+  1467 lines / 11 statement files / 801 statement lines / 11 SQL. H3 CONFIRM:
+  Ruff 0/0, authored long0, SQL long0, raw output/no postformat. Tests: 50
+  passed, 0 skipped; pgn v0.12.0; strict basedpyright 0/0.
+
+- Migrated the generator to gen-contract v4.0.1 and gen-sdk v2.0.0 using
+  `Sdk.Sigs`. The implementation moved from `gen/` into `src/`, the working-tree
+  entry point is `src/package.dhall`, and the contract fixture is
+  `fixtures/Exhaustive.dhall`. Remote imports in `src/Deps/` are ordinary
+  sha256-pinned imports.
+
+- Preserved the pgn subprocess RSS watchdog. Each process runs in its own process
+  group, is polled every 2 seconds, and is killed on a
+  `PGN_MAX_RSS_GB` breach, with a 40 GB default. Heavy fixture generation remains
+  serial.
+
+- Fixed one-field composite binding. Generated dumpers construct field-ordered
+  tuples with `dataclasses.fields` and `getattr`, preserving one-field arity.
+  The fixture exercises the type as both a parameter and a result.
+
+- Kept `PyIdent.dhall` independent of fork-only text equality by using
+  `Lude.Text.replaceIfOneOf`'s bounded, sentinel-wrapped `Text/replace`
+  construction. Keyword fields and parameters gain a trailing underscore only
+  in Python, while raw database names remain stable.
+
+- Preserved the release and license flow. The release job resolves
+  `src/package.dhall` into the `resolved.dhall` release asset, then byte-checks
+  and bundles that same asset into the `pgenie-python-gen` wheel. Repository
+  source remains MIT, emitted Python is MIT-0, and the combined resolved artifact
+  and wheel are GPL-3.0-or-later because they inline gen-sdk. The wheel includes
+  the sha256-pinned GPL text and `wheel/NOTICE`; PyPI publication remains
+  disabled behind its explicit gate.

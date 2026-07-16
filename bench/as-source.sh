@@ -1,15 +1,14 @@
 #!/usr/bin/env bash
-# Cold-cache benchmark of `pgn generate` on the fixture project, comparing the
-# current gen (Deps imported `as Source`) against the same tree with the
-# pre-as-Source Deps (plain pinned imports). Both variants run the same pgn
-# binary by default, so the measurement isolates the import mode itself.
+# Historical cold-cache benchmark of a retired Dhall import-mode experiment.
+# Current src/Deps uses ordinary sha256-pinned imports, so results from the
+# current checkout do not reproduce the original comparison.
 #
 #   mise run bench:as-source
 #
 # Needs a reachable Postgres; override with PGN_TEST_DATABASE_URL. Each variant
 # gets a fresh XDG_CACHE_HOME, so every run pays the full cold import cost.
 # PGN_BEFORE_BIN selects a different pgn for the before variant (e.g. 0.8.0,
-# which predates `as Source` and can only run that variant):
+# which predates the retired mode and can only run the ordinary-import variant):
 #
 #   PGN_BEFORE_BIN="$(mise x github:pgenie-io/pgenie@0.8.0 -- sh -c 'command -v pgn')" \
 #     mise run bench:as-source
@@ -24,19 +23,20 @@ trap 'rm -rf "$work"' EXIT
 
 prepare() { # $1 = variant root; mirrors the repo layout the fixture expects
   rm -rf "$1" && mkdir -p "$1/tests"
-  cp -R "$root/gen" "$1/gen"
+  cp -R "$root/src" "$1/src"
   cp -R "$root/tests/fixture-project" "$1/tests/fixture-project"
   rm -f "$1/tests/fixture-project/freeze1.pgn.yaml"
   rm -rf "$1/tests/fixture-project/artifacts"
 }
 
-# Rewrite Deps to the pre-as-Source form: drop the mode and restore the
-# normalized-expression pins (an `as Source` pin hashes the import's source,
-# so the two modes need different sha256 values for the same version).
+# Legacy rewrite for a historical checkout. Current Deps already use ordinary
+# imports and must not be interpreted as the old comparison baseline.
 strip_as_source() { # $1 = variant root
-  perl -i -ne 'print unless /^\s*as Source$/' "$1"/gen/Deps/*.dhall
-  perl -i -pe 's/8d43544ecb0e612406af3133bdbca51138c704a77a5a29ef62fe034d0e77a3a6/b9f7bb842345f3864c71e877fda4200306ba5c044a43e6f7713a23bc4769b91a/' "$1/gen/Deps/Sdk.dhall"
-  perl -i -pe 's/46b527b071eba96a17e76b4bc5774645714dd5b4355974d221e705aa7c126e77/14c43eec97972ae27afe3386ff937d04db66f84273d5551476361db12d2c4b50/' "$1/gen/Deps/Lude.dhall"
+  perl -i -ne 'print unless /^\s*as Source$/' "$1"/src/Deps/*.dhall
+
+  # The substitution below belongs to the old dependency snapshot. It is a
+  # no-op for the current ordinary imports and their current hashes.
+  perl -i -pe 's/46b527b071eba96a17e76b4bc5774645714dd5b4355974d221e705aa7c126e77/14c43eec97972ae27afe3386ff937d04db66f84273d5551476361db12d2c4b50/' "$1/src/Deps/Lude.dhall"
 }
 
 measure() { # $1 = label, $2 = variant root, $3 = pgn binary

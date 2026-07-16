@@ -9,17 +9,22 @@ from __future__ import annotations
 
 import shutil
 import subprocess
+import uuid
+from collections.abc import Iterator
 from pathlib import Path
 
+import psycopg
 import pytest
+from psycopg.conninfo import make_conninfo
 
 from tests._harness import (
     FIXTURE_PROJECT,
-    GEN_DIR,
     GOLDEN_DIR,
     HERE,
+    SRC_DIR,
     admin_database_url,
     effective_database_name,
+    ensure_droppable,
     run_pgn,
 )
 
@@ -28,9 +33,9 @@ from tests._harness import (
 def pgn_bin() -> str:
     """Absolute path to the mise-managed pgn binary.
 
-    pgn is installed via mise from GitHub releases and is not on PATH outside the
-    monorepo. Resolving it here lets the harness exec it with cwd set to a temp
-    project copy that lives outside the repo.
+    pgn is pinned by this repository's mise config and may not be on the caller's
+    PATH. Resolving it here lets the harness exec it with cwd set to a temporary
+    project copy.
     """
     resolved = shutil.which("pgn")
     if resolved:
@@ -38,7 +43,7 @@ def pgn_bin() -> str:
     out = subprocess.run(["mise", "which", "pgn"], cwd=HERE, capture_output=True, text=True)
     path = out.stdout.strip()
     if out.returncode != 0 or not path:
-        pytest.skip("pgn binary not resolvable via mise")
+        pytest.fail("pgn 0.12.0 is required but is not resolvable via PATH or mise")
     return path
 
 
@@ -57,6 +62,37 @@ def pgn_admin_url() -> str:
 
 
 @pytest.fixture
+def roundtrip_db(pgn_admin_url: str) -> Iterator[str]:
+    """A uniquely named scratch database on the configured server, dropped on teardown."""
+    name = f"pgn_rt_{uuid.uuid4().hex[:12]}"
+    admin = psycopg.connect(pgn_admin_url, autocommit=True)
+    try:
+        # Encoding to bytes sidesteps psycopg's LiteralString-typed execute
+        # overload for these dynamic admin statements (the db name is a generated
+        # hex, not user input).
+        _ = admin.execute(f'CREATE DATABASE "{name}"'.encode())
+    finally:
+        admin.close()
+
+    # Rebuild via conninfo (not string surgery) so host/port/user/params survive,
+    # including a path-less admin URL the guard accepts.
+    target = make_conninfo(pgn_admin_url, dbname=name)
+    try:
+        yield target
+    finally:
+        admin = psycopg.connect(pgn_admin_url, autocommit=True)
+        try:
+            terminate = (
+                "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = %s AND pid <> pg_backend_pid()"
+            )
+            _ = admin.execute(terminate.encode(), (name,))
+            ensure_droppable(name)
+            _ = admin.execute(f'DROP DATABASE IF EXISTS "{name}"'.encode())
+        finally:
+            admin.close()
+
+
+@pytest.fixture
 def fixture_copy(tmp_path: Path) -> Path:
     """A writable copy of the fixture pgn project under tmp_path."""
     dest = tmp_path / "fixture-project"
@@ -67,15 +103,15 @@ def fixture_copy(tmp_path: Path) -> Path:
 def generated_tree(pgn_bin: str, pgn_admin_url: str, tmp_path_factory: pytest.TempPathFactory) -> Path:
     """Generate the fixture client once and return its artifacts/python dir.
 
-    The generator path in project1.pgn.yaml is `../../gen/Gen.dhall`,
+    The generator path in project1.pgn.yaml is `../../src/package.dhall`,
     relative to the fixture project. To keep it resolvable the copy mirrors the
-    real layout: `<tmp>/gen` and `<tmp>/tests/fixture-project`. The freeze
+    real layout: `<tmp>/src` and `<tmp>/tests/fixture-project`. The freeze
     file is dropped so pgn re-resolves the working-tree generator instead of a
-    cached hash (a stale freeze makes pgn ignore gen/ edits and silently
+    cached hash (a stale freeze makes pgn ignore src/ edits and silently
     emit the old output).
     """
     root = tmp_path_factory.mktemp("pygen")
-    _ = shutil.copytree(GEN_DIR, root / "gen")
+    _ = shutil.copytree(SRC_DIR, root / "src")
     project = shutil.copytree(FIXTURE_PROJECT, root / "tests" / "fixture-project")
     (project / "freeze1.pgn.yaml").unlink(missing_ok=True)
     shutil.rmtree(project / "artifacts", ignore_errors=True)
@@ -102,15 +138,18 @@ def full_package(generated_tree: Path, tmp_path_factory: pytest.TempPathFactory)
     root = tmp_path_factory.mktemp("pkg")
     shell_src = GOLDEN_DIR / "src"
     generated_src = generated_tree / "src"
-    _ = shutil.copytree(shell_src, root / "src", ignore=shutil.ignore_patterns("_generated", "__init__.py"))
-    for pkg_dir in generated_src.iterdir():
-        dest_pkg = root / "src" / pkg_dir.name
-        _ = shutil.copytree(pkg_dir / "_generated", dest_pkg / "_generated")
-        _ = shutil.copy2(pkg_dir / "__init__.py", dest_pkg / "__init__.py")
-        # The sync facade (sync/__init__.py) lives outside _generated, like the
-        # async facade; overlay it too when the project emits a sync surface.
-        sync_facade = pkg_dir / "sync" / "__init__.py"
-        if sync_facade.exists():
-            (dest_pkg / "sync").mkdir(parents=True, exist_ok=True)
-            _ = shutil.copy2(sync_facade, dest_pkg / "sync" / "__init__.py")
+    packages = [path for path in generated_src.iterdir() if path.is_dir()]
+    assert len(packages) == 1, f"expected exactly one generated package, found {packages}"
+    pkg_dir = packages[0]
+    assert pkg_dir.name == "specimen_client"
+
+    _ = shutil.copytree(
+        shell_src,
+        root / "src",
+        ignore=shutil.ignore_patterns("_generated", "__init__.py", "sync"),
+    )
+    dest_pkg = root / "src" / pkg_dir.name
+    _ = shutil.copytree(pkg_dir / "_generated", dest_pkg / "_generated")
+    _ = shutil.copy2(pkg_dir / "__init__.py", dest_pkg / "__init__.py")
+    _ = shutil.copytree(pkg_dir / "sync", dest_pkg / "sync")
     return root

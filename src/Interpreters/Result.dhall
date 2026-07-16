@@ -1,0 +1,96 @@
+let Prelude = ../Deps/Prelude.dhall
+
+let Lude = ../Deps/Lude.dhall
+
+let Model = ../Deps/Contract.dhall
+
+let ImportSet = ../Structures/ImportSet.dhall
+
+let CustomKind = ../Structures/CustomKind.dhall
+
+let ResultColumns = ./ResultColumns.dhall
+
+let Compiled = Lude.Compiled
+
+-- rowClassName is supplied by the caller (Query.dhall derives it from the
+-- query's own name) rather than living on Model.Result, so it rides on this
+-- interpreter's own local Config instead of widening Input away from
+-- Model.Result. ResultColumns and lower interpreters use empty configs.
+let Config =
+      { rowClassName : Text }
+
+let Input = Model.Result
+
+let RowClass = { name : Text, fieldsBlock : Text }
+
+let Output =
+      { returnType : Text
+      , helperName : Text
+      , rowClass : Optional RowClass
+      , imports : ImportSet.Type
+      }
+
+let noResult
+    : Text -> Text -> Output
+    = \(returnType : Text) ->
+      \(helperName : Text) ->
+        { returnType
+        , helperName
+        , rowClass = None RowClass
+        , imports = ImportSet.empty
+        }
+
+let cardinalityShape
+    : Model.ResultRowsCardinality -> Text -> { returnType : Text, helperName : Text }
+    = \(cardinality : Model.ResultRowsCardinality) ->
+      \(rowClassName : Text) ->
+        merge
+          { Optional =
+              { returnType = rowClassName ++ " | None"
+              , helperName = "fetch_optional"
+              }
+          , Single = { returnType = rowClassName, helperName = "fetch_single" }
+          , Multiple =
+              { returnType = "list[" ++ rowClassName ++ "]"
+              , helperName = "fetch_many"
+              }
+          }
+          cardinality
+
+let rowsOutput =
+      \(config : Config) ->
+      \(lookup : CustomKind.Lookup) ->
+      \(rows : Model.ResultRows) ->
+        let shape = cardinalityShape rows.cardinality config.rowClassName
+
+        let columns =
+              Prelude.NonEmpty.toList Model.Member rows.columns
+
+        in  Compiled.map
+              ResultColumns.Output
+              Output
+              ( \(cols : ResultColumns.Output) ->
+                  { returnType = shape.returnType
+                  , helperName = shape.helperName
+                  , rowClass = Some
+                    { name = config.rowClassName
+                    , fieldsBlock = cols.fieldsBlock
+                    }
+                  , imports = cols.imports
+                  }
+              )
+              (ResultColumns.run {=} lookup columns)
+
+let run =
+      \(config : Config) ->
+      \(lookup : CustomKind.Lookup) ->
+      \(input : Input) ->
+        merge
+          { Void = Compiled.ok Output (noResult "None" "execute_void")
+          , RowsAffected =
+              Compiled.ok Output (noResult "int" "execute_rows_affected")
+          , Rows = rowsOutput config lookup
+          }
+          input
+
+in  { Input, Output, RowClass, run }

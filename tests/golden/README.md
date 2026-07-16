@@ -1,33 +1,41 @@
-# Golden files
+# Golden fixture
 
-A committed full fixture package: the hand-written shell (`pyproject.toml`,
-`src/specimen_client/py.typed`) plus the generated subtree under
-`src/specimen_client/_generated/` and the generated package-root facade
-`src/specimen_client/__init__.py`. The generator emits the `_generated/` subtree and
-the facade; the rest of the shell is hand-written and committed here as a fixture.
+This directory is one committed combined client package. Its hand-written shell
+is `pyproject.toml` plus `src/specimen_client/py.typed`. Generator-owned content
+is the complete `src/specimen_client/_generated/` subtree, the package-root
+`src/specimen_client/__init__.py` facade, and, when `emitSync: true`, the
+`src/specimen_client/sync/__init__.py` facade.
 
-`test_generated_matches_golden` regenerates the fixture client into a temp tree
-and asserts every file under the fresh `_generated/` plus the facade equals its
-golden twin, both ways (no missing, no extra).
-`test_generated_passes_basedpyright_strict` runs basedpyright strict on the full
-golden package (shell + facade + `_generated`) so the strictness guarantee covers
-the real consumer layout. This `README.md` and the hand-written shell stay out of
-the byte-comparison.
+The harness overlays that hand-written shell with a freshly generated package.
+It compares every generator-owned file in both directions, checks
+basedpyright strict on the full consumer layout, and exercises both connection
+surfaces. There is only one golden package because async and sync share the same
+canonical SQL, Row classes, custom types, core, and registration module.
 
-## Updating the golden
+## Regenerating
 
-Run only when a generator change legitimately alters the output, and review the
-resulting diff before committing. Refresh the `_generated/` subtree and the
-facade; never overwrite the hand-written `pyproject.toml` or `py.typed`.
+Run the repository task only when an intentional generator or source-query
+comment change alters output:
 
 ```bash
-# Default admin URL is localhost:5432; set PGN_TEST_DATABASE_URL to point
-# elsewhere (e.g. a local pg0 instance on a non-default port).
+# Set PGN_TEST_DATABASE_URL for a PostgreSQL server on a non-default address.
 mise run golden
 ```
 
-The task (see `mise.toml`) copies the fixture project to a temp dir, cuts it
-down to the `python` artifact (a full 7-artifact generate peaks at ~31 GB RSS,
-a single-artifact one at ~10 GB), regenerates from the working-tree `gen/`
-with a fresh resolve (no stale `freeze1.pgn.yaml`), and rsyncs the
-`_generated/` subtree plus both facades back into the golden tree.
+The task performs one serial, memory-heavy generation. It copies
+`tests/fixture-project/` to a temporary directory, deletes the copied freeze file
+and artifact directory, keeps only the Python artifact, and rewrites its `gen`
+reference to the working-tree `src/package.dhall`. After pgn succeeds, it syncs
+the generated subtree and copies the root and sync facades into this fixture.
+The temporary directory is removed on exit.
+
+Do not hand-edit generator-owned files. Do not copy over `pyproject.toml` or
+`py.typed`. The task does not update analyzed signature YAML, so any signature
+change is a separate, explicit review and is unexpected for a SQL-comment-only
+refresh.
+
+After regeneration, review the complete fixture diff before committing:
+
+```bash
+mise exec -- git diff -- tests/golden
+```

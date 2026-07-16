@@ -83,6 +83,17 @@ parameters:
   origin:
     type: point_2_d
     not_null: false
+  codec_payload:
+    type: z_codec_payload
+    not_null: true
+  codec_payloads:
+    type: z_codec_payload
+    not_null: true
+    dims: 1
+    element_not_null: false
+  codec_wrapper:
+    type: a_codec_wrapper
+    not_null: false
 result:
   cardinality: one
   columns:
@@ -177,6 +188,17 @@ result:
       element_not_null: false
     origin:
       type: point_2_d
+      not_null: false
+    codec_payload:
+      type: z_codec_payload
+      not_null: true
+    codec_payloads:
+      type: z_codec_payload
+      not_null: true
+      dims: 1
+      element_not_null: false
+    codec_wrapper:
+      type: a_codec_wrapper
       not_null: false
     label:
       type: text

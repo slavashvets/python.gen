@@ -1,0 +1,10 @@
+composite:
+  payload:
+    type: z_codec_payload
+    not_null: false
+  feeling:
+    type: mood
+    not_null: false
+  note:
+    type: text
+    not_null: false

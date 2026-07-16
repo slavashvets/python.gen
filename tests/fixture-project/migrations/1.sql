@@ -5,6 +5,18 @@
 
 create type mood as enum ('happy', 'sad', 'meh');
 
+create type z_codec_payload as (
+  "class" int8,
+  pg_decode text,
+  pg_encode text
+);
+
+create type a_codec_wrapper as (
+  payload z_codec_payload,
+  feeling mood,
+  note text
+);
+
 create type point2d as (
   x float8,
   y float8
@@ -24,10 +36,8 @@ create domain revision as integer
 create domain jsonb_object as jsonb
   check (jsonb_typeof(value) = 'object');
 
--- Single-field composite fixture: exercises the composite-bind edge case where
--- a one-field tuple literal needs a trailing comma to stay a tuple in Python
--- (point2d's two-field tuple never needed one, so its golden never exercised
--- this path).
+-- Single-field composite fixture: verifies that the registered dataclass dumper
+-- returns a field-ordered one-element tuple and preserves composite arity.
 create type tag_value as (
   value text
 );
@@ -79,6 +89,9 @@ create table specimen (
 
   -- composite
   origin        point2d,
+  codec_payload z_codec_payload not null,
+  codec_payloads z_codec_payload[] not null,
+  codec_wrapper a_codec_wrapper,
 
   -- domains
   label         display_name not null,

@@ -1,0 +1,173 @@
+let Lude = ../Deps/Lude.dhall
+
+let Prelude = ../Deps/Prelude.dhall
+
+let Model = ../Deps/Contract.dhall
+
+let ImportSet = ../Structures/ImportSet.dhall
+
+let CustomKind = ../Structures/CustomKind.dhall
+
+let PyIdent = ../Structures/PyIdent.dhall
+
+let Surface = ../Structures/Surface.dhall
+
+let ResultModule = ./Result.dhall
+
+let QueryFragmentsModule = ./QueryFragments.dhall
+
+let ParamsMember = ./ParamsMember.dhall
+
+let StatementModule = ../Templates/StatementModule.dhall
+
+let Config = { emitSync : Bool }
+
+let Compiled = Lude.Compiled
+
+let Input = Model.Query
+
+-- A query renders to one canonical statement module: its Row dataclass when it
+-- returns rows, the async function, and an optional adjacent sync function.
+-- rowClassName is also surfaced because Project.dhall needs the name for facade
+-- re-exports; the Row's definition remains in this module.
+let Output =
+      { sourceName : Text
+      , sourcePath : Text
+      , functionName : Text
+      , rowClassName : Optional Text
+      , modulePath : Text
+      , content : Text
+      }
+
+let render =
+      \(config : Config) ->
+      \(input : Input) ->
+      \(functionName : Text) ->
+      \(result : ResultModule.Output) ->
+      \(fragments : QueryFragmentsModule.Output) ->
+      \(params : List ParamsMember.Output) ->
+        -- The function name is also the module filename and facade import name, so
+        -- protect both Python syntax and the private globals in a statement module.
+        -- SQL/dict/row lookups still key off raw names.
+        let paramSigLines =
+              Prelude.List.map
+                ParamsMember.Output
+                Text
+                (\(p : ParamsMember.Output) -> p.fieldName ++ ": " ++ p.pyType)
+                params
+
+        let paramDictEntries =
+              Prelude.List.map
+                ParamsMember.Output
+                Text
+                ( \(p : ParamsMember.Output) ->
+                    "\"" ++ p.pgName ++ "\": " ++ p.bindExpr
+                )
+                params
+
+        let paramImports =
+              ImportSet.combineAll
+                ( Prelude.List.map
+                    ParamsMember.Output
+                    ImportSet.Type
+                    (\(p : ParamsMember.Output) -> p.imports)
+                    params
+                )
+
+        let rowClassName =
+              Prelude.Optional.map
+                ResultModule.RowClass
+                Text
+                (\(rc : ResultModule.RowClass) -> rc.name)
+                result.rowClass
+
+        let rowDef =
+              Prelude.Optional.map
+                ResultModule.RowClass
+                StatementModule.RowDef
+                ( \(rc : ResultModule.RowClass) ->
+                    { className = rc.name
+                    , fieldsBlock = rc.fieldsBlock
+                    }
+                )
+                result.rowClass
+
+        -- Row and parameter imports share the canonical statement file, so they
+        -- must merge into one ImportSet before rendering.
+        let mergedImports = ImportSet.combine paramImports result.imports
+
+        let content =
+              StatementModule.run
+                { functionName
+                , returnType = result.returnType
+                , helperName = result.helperName
+                , sqlLiteral = fragments.sqlLiteral
+                , rowDef
+                , paramSigLines
+                , paramDictEntries
+                , imports = mergedImports
+                , emitSync = config.emitSync
+                , asyncSurface = Surface.async
+                , syncSurface = Surface.sync
+                }
+
+        in  { sourceName = input.name.inSnakeCase
+            , sourcePath = input.srcPath
+            , functionName
+            , rowClassName
+            , modulePath = "statements/${functionName}.py"
+            , content
+            }
+
+let run =
+      \(config : Config) ->
+      \(lookup : CustomKind.Lookup) ->
+      \(input : Input) ->
+        let pythonName =
+              { snakeCase = PyIdent.querySafeName input.name.inSnakeCase
+              , pascalCase = input.name.inPascalCase
+              }
+
+        let rowClassName = pythonName.pascalCase ++ "Row"
+
+        in  Compiled.nest
+              Output
+              input.srcPath
+              ( Compiled.map3
+                  ResultModule.Output
+                  QueryFragmentsModule.Output
+                  (List ParamsMember.Output)
+                  Output
+                  (render config input pythonName.snakeCase)
+                  ( Compiled.nest
+                      ResultModule.Output
+                      "result"
+                      ( ResultModule.run
+                          { rowClassName }
+                          lookup
+                          input.result
+                      )
+                  )
+                  ( Compiled.nest
+                      QueryFragmentsModule.Output
+                      "sql"
+                      (QueryFragmentsModule.run {=} input.fragments)
+                  )
+                  ( Compiled.nest
+                      (List ParamsMember.Output)
+                      "params"
+                      ( Compiled.traverseList
+                          Model.Member
+                          ParamsMember.Output
+                          ( \(member : Model.Member) ->
+                              Compiled.nest
+                                ParamsMember.Output
+                                member.pgName
+                                (ParamsMember.run {=} lookup member)
+                          )
+                          input.params
+                      )
+                  )
+              )
+
+in  { Input, Output, run }

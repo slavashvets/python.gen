@@ -6,27 +6,29 @@
 End to end: validate the fixture pgn project (`pgn analyse`), generate the Python
 client (`pgn generate`), diff it against the committed golden tree, typecheck the
 generated package with basedpyright strict, and round-trip every generated
-statement function against a throwaway database on the local pg0 instance.
+statement function against a uniquely named scratch database on the configured
+PostgreSQL server.
 """
 
 from __future__ import annotations
 
+import ast
 import asyncio
 import importlib
+import inspect
 import json
 import subprocess
 import sys
 import uuid
-from collections.abc import Iterator
-from decimal import Decimal
+from contextlib import contextmanager
 from datetime import date
+from decimal import Decimal
 from pathlib import Path
 
 import psycopg
 import pytest
-from psycopg.conninfo import make_conninfo
 
-from tests._harness import FIXTURE_PROJECT, GOLDEN_DIR, HERE, ensure_droppable, run_pgn
+from tests._harness import FIXTURE_PROJECT, GOLDEN_DIR, HERE, run_pgn
 
 HARNESS_ROOT = HERE.parent
 
@@ -34,9 +36,25 @@ HARNESS_ROOT = HERE.parent
 # __init__.py facade; the rest of the shell (pyproject.toml, py.typed) is
 # hand-written and lives in golden as a committed fixture, not produced by
 # generate.
-GENERATED_SUBTREE = Path("src/specimen_client/_generated")
-FACADE_INIT = Path("src/specimen_client/__init__.py")
-SYNC_FACADE_INIT = Path("src/specimen_client/sync/__init__.py")
+GENERATED_PACKAGE = Path("src/specimen_client")
+QUERY_NAMES = (
+    "bump_specimen_revision",
+    "get_specimen",
+    "get_tagged_item",
+    "insert_specimen",
+    "insert_tagged_item",
+    "list_specimens_by_class",
+    "list_specimens_by_feeling",
+    "list_specimens_by_ids",
+    "list_specimens_by_moods",
+    "list_specimens_keyword_column",
+    "search_specimens",
+)
+ROW_NAMES = {
+    name: "".join(part.title() for part in name.split("_")) + "Row"
+    for name in QUERY_NAMES
+    if name != "bump_specimen_revision"
+}
 
 
 def test_fixture_project_analyses_clean(pgn_bin: str, pgn_admin_url: str, fixture_copy: Path) -> None:
@@ -77,31 +95,31 @@ def test_generate_produces_python_package(generated_tree: Path) -> None:
     assert list(generated_tree.rglob("*.py")), "generator produced no Python modules"
 
 
-def _relative_files(root: Path) -> set[Path]:
+def _relative_files(root: Path, *, exclude: frozenset[Path] = frozenset()) -> set[Path]:
     # Skip bytecode: the generator never emits it, but a local `import specimen_client`
     # leaves __pycache__ under golden and would false-fail the file-set comparison.
     return {
         p.relative_to(root)
         for p in root.rglob("*")
-        if p.is_file() and "__pycache__" not in p.parts
+        if p.is_file() and "__pycache__" not in p.parts and p.relative_to(root) not in exclude
     }
 
 
 def test_generated_matches_golden(generated_tree: Path) -> None:
-    """The generated subtree and the facade must equal golden's byte for byte.
+    """Every generated package file must equal golden byte for byte.
 
-    Generate produces the <pkg>/_generated subtree and the package-root
-    __init__.py facade; the rest of the shell in golden is a hand-written
+    Generate produces the <pkg>/_generated subtree plus the root and sync
+    facades; the rest of the shell in golden is a hand-written
     committed fixture and stays out of this comparison. Update flow when the
     generator legitimately changes: re-run `pgn generate` in tests/fixture-project
-    and rsync the fresh _generated subtree plus the facade into golden (see
+    and copy the fresh _generated subtree plus both facades into golden (see
     tests/golden/README.md), then review the diff.
     """
-    produced_root = generated_tree / GENERATED_SUBTREE
-    golden_root = GOLDEN_DIR / GENERATED_SUBTREE
+    produced_root = generated_tree / GENERATED_PACKAGE
+    golden_root = GOLDEN_DIR / GENERATED_PACKAGE
 
     produced = _relative_files(produced_root)
-    golden = _relative_files(golden_root)
+    golden = _relative_files(golden_root, exclude=frozenset({Path("py.typed")}))
 
     missing = sorted(str(p) for p in golden - produced)
     extra = sorted(str(p) for p in produced - golden)
@@ -113,25 +131,19 @@ def test_generated_matches_golden(generated_tree: Path) -> None:
         if (produced_root / rel).read_text() != (golden_root / rel).read_text():
             mismatched.append(str(rel))
 
-    for facade in (FACADE_INIT, SYNC_FACADE_INIT):
-        if (generated_tree / facade).read_text() != (GOLDEN_DIR / facade).read_text():
-            mismatched.append(str(facade))
-
     assert not mismatched, (
         "generated output drifted from golden in: "
         + ", ".join(mismatched)
-        + "\nupdate via: rsync the fresh _generated subtree and the facade into golden (see tests/golden/README.md)"
+        + "\nupdate via: mise run golden (see tests/golden/README.md)"
     )
 
 
-def test_generated_passes_basedpyright_strict(tmp_path: Path) -> None:
-    """basedpyright strict on the FULL golden package: zero errors and warnings.
+def test_generated_passes_basedpyright_strict(full_package: Path, tmp_path: Path) -> None:
+    """basedpyright strict on the fresh full package: zero errors and warnings.
 
-    The golden package (hand-written shell + the generated _generated subtree)
-    is the committed contract; test_generated_matches_golden proves the fresh
-    output equals golden's _generated subtree, so checking golden checks the
-    generator's output. psycopg resolves from the harness venv. The config scopes
-    the run to golden's `src` so the harness tests are not pulled in.
+    The full_package fixture overlays the fresh generated tree and both facades
+    onto the hand-written shell. psycopg resolves from the harness venv. The
+    config scopes the run to that package's `src` so harness tests stay excluded.
     """
     config = tmp_path / "pyrightconfig.json"
     _ = config.write_text(
@@ -139,7 +151,7 @@ def test_generated_passes_basedpyright_strict(tmp_path: Path) -> None:
             {
                 "pythonVersion": "3.12",
                 "typeCheckingMode": "strict",
-                "include": [str(GOLDEN_DIR / "src")],
+                "include": [str(full_package / "src")],
                 "venvPath": str(HARNESS_ROOT),
                 "venv": ".venv",
                 "reportMissingModuleSource": False,
@@ -159,43 +171,11 @@ def test_generated_passes_basedpyright_strict(tmp_path: Path) -> None:
 
     summary = json.loads(result.stdout)["summary"]
     # basedpyright exits 0 with filesAnalyzed=0 when the include path matches nothing,
-    # so without this the strict gate would pass vacuously if the golden src ever moved.
+    # so without this the strict gate would pass vacuously if the package src moved.
     assert summary["filesAnalyzed"] > 0, f"basedpyright analyzed no files; bad include path?\n{result.stdout}"
     assert summary["errorCount"] == 0 and summary["warningCount"] == 0, (
         f"basedpyright strict reported issues: {summary}\n{result.stdout}"
     )
-
-
-@pytest.fixture
-def roundtrip_db(pgn_admin_url: str) -> Iterator[str]:
-    """A uniquely named throwaway database on pg0, dropped on teardown."""
-    name = f"pgn_rt_{uuid.uuid4().hex[:12]}"
-    admin = psycopg.connect(pgn_admin_url, autocommit=True)
-    try:
-        # Encoding to bytes sidesteps psycopg's LiteralString-typed execute
-        # overload for these dynamic admin statements (the db name is a generated
-        # hex, not user input).
-        _ = admin.execute(f'CREATE DATABASE "{name}"'.encode())
-    finally:
-        admin.close()
-
-    # Rebuild via conninfo (not string surgery) so host/port/user/params survive,
-    # including a path-less admin URL the guard accepts.
-    target = make_conninfo(pgn_admin_url, dbname=name)
-    try:
-        yield target
-    finally:
-        admin = psycopg.connect(pgn_admin_url, autocommit=True)
-        try:
-            terminate = (
-                "SELECT pg_terminate_backend(pid) FROM pg_stat_activity "
-                "WHERE datname = %s AND pid <> pg_backend_pid()"
-            )
-            _ = admin.execute(terminate.encode(), (name,))
-            ensure_droppable(name)
-            _ = admin.execute(f'DROP DATABASE IF EXISTS "{name}"'.encode())
-        finally:
-            admin.close()
 
 
 def _apply_migrations(db_url: str) -> None:
@@ -205,50 +185,131 @@ def _apply_migrations(db_url: str) -> None:
             _ = conn.execute(migration.read_text().encode())
 
 
-def _import_client(full_package: Path):  # noqa: ANN202 - dynamic module set
-    src = str(full_package / "src")
-    if src not in sys.path:
-        sys.path.insert(0, src)
+def _clear_client_modules() -> None:
     for name in list(sys.modules):
         if name == "specimen_client" or name.startswith("specimen_client."):
             del sys.modules[name]
-    return importlib.import_module
 
 
-def test_roundtrip_type_mappings(full_package: Path, roundtrip_db: str) -> None:
+@contextmanager
+def _client_modules(full_package: Path):
+    src = str(full_package / "src")
+    original_path = sys.path.copy()
+    sys.path.insert(0, src)
+    _clear_client_modules()
+    try:
+        root = importlib.import_module("specimen_client")
+        sync = importlib.import_module("specimen_client.sync")
+        yield root, sync, importlib.import_module
+    finally:
+        _clear_client_modules()
+        sys.path[:] = original_path
+
+
+@pytest.fixture
+def client_modules(full_package: Path):
+    with _client_modules(full_package) as loaded:
+        yield loaded
+
+
+def test_combined_public_api_identity_and_signatures(full_package: Path) -> None:
+    with _client_modules(full_package) as (root, sync, import_module):
+        assert root.sync is sync
+
+        for name in QUERY_NAMES:
+            statement = import_module(f"specimen_client._generated.statements.{name}")
+            async_function = getattr(root, name)
+            sync_function = getattr(sync, name)
+            assert async_function is getattr(statement, name)
+            assert sync_function is getattr(statement, f"{name}_sync")
+            assert inspect.iscoroutinefunction(async_function)
+            assert not inspect.iscoroutinefunction(sync_function)
+
+            async_signature = inspect.signature(async_function)
+            sync_signature = inspect.signature(sync_function)
+            assert async_signature.return_annotation == sync_signature.return_annotation
+            async_params = list(async_signature.parameters.values())
+            sync_params = list(sync_signature.parameters.values())
+            assert len(async_params) == len(sync_params)
+            for index, (async_param, sync_param) in enumerate(zip(async_params, sync_params, strict=True)):
+                assert async_param.name == sync_param.name
+                assert async_param.kind == sync_param.kind
+                assert async_param.default == sync_param.default
+                if index == 0:
+                    assert async_param.annotation == "AsyncConnection[object]"
+                    assert sync_param.annotation == "Connection[object]"
+                else:
+                    assert async_param.annotation == sync_param.annotation
+
+            row_name = ROW_NAMES.get(name)
+            if row_name is not None:
+                row_class = getattr(statement, row_name)
+                assert getattr(root, row_name) is row_class
+                assert getattr(sync, row_name) is row_class
+
+        for name in (
+            "ACodecWrapper",
+            "JsonValue",
+            "Mood",
+            "NoRowError",
+            "Point2D",
+            "TagValue",
+            "ZCodecPayload",
+        ):
+            assert getattr(root, name) is getattr(sync, name)
+
+        register = import_module("specimen_client._generated._register")
+        assert root.register_types is register.register_types
+        assert sync.register_types is register.register_types_sync
+        assert "register_types" in root.__all__
+        assert "register_types" in sync.__all__
+
+        source = Path(register.__file__).read_text()
+        child_async = source.index("z_codec_payload_info = await CompositeInfo.fetch")
+        parent_async = source.index("a_codec_wrapper_info = await CompositeInfo.fetch")
+        child_sync = source.index("z_codec_payload_info = CompositeInfo.fetch")
+        parent_sync = source.index("a_codec_wrapper_info = CompositeInfo.fetch")
+        assert child_async < parent_async
+        assert child_sync < parent_sync
+        assert source.count("from . import types as _db_types") == 1
+        assert "_dataclass_callbacks(_db_types.ZCodecPayload)" in source
+        assert "_dataclass_callbacks(_db_types.ACodecWrapper)" in source
+
+
+def test_roundtrip_type_mappings(client_modules, roundtrip_db: str) -> None:
     """INSERT then SELECT through the generated client, asserting the mappings.
 
     Exercises every generated statement and the full type surface: enum param +
     enum column decoding to the generated StrEnum, composite param encode +
     column decode to the frozen dataclass, array param via ANY, jsonb param and
     column round-trip, the literal-`%` query, nullable columns as None, and the
-    rows-affected helper. Runs against a throwaway pg0 database.
+    rows-affected helper. Runs against a uniquely named scratch database on the
+    configured PostgreSQL server.
     """
     _apply_migrations(roundtrip_db)
-    import_module = _import_client(full_package)
-
-    register = import_module("specimen_client._generated._register")
-    mood_mod = import_module("specimen_client._generated.types.mood")
-    point_mod = import_module("specimen_client._generated.types.point_2_d")
-    insert = import_module("specimen_client._generated.statements.insert_specimen")
-    get = import_module("specimen_client._generated.statements.get_specimen")
-    by_feeling = import_module("specimen_client._generated.statements.list_specimens_by_feeling")
-    by_ids = import_module("specimen_client._generated.statements.list_specimens_by_ids")
-    by_moods = import_module("specimen_client._generated.statements.list_specimens_by_moods")
-    by_class = import_module("specimen_client._generated.statements.list_specimens_by_class")
-    by_kw_col = import_module("specimen_client._generated.statements.list_specimens_keyword_column")
-    search = import_module("specimen_client._generated.statements.search_specimens")
-    bump = import_module("specimen_client._generated.statements.bump_specimen_revision")
-
-    Mood = mood_mod.Mood
-    Point2D = point_mod.Point2D
+    facade, _, _ = client_modules
+    Mood = facade.Mood
+    Point2D = facade.Point2D
+    ZCodecPayload = facade.ZCodecPayload
+    ACodecWrapper = facade.ACodecWrapper
 
     async def scenario() -> None:
         conn = await psycopg.AsyncConnection.connect(roundtrip_db, autocommit=True)
         try:
-            await register.register_types(conn)
+            await facade.register_types(conn)
 
-            inserted = await insert.insert_specimen(
+            codec_payload = ZCodecPayload(class_=41, pg_decode="scalar", pg_encode=None)
+            codec_payloads = [
+                ZCodecPayload(class_=42, pg_decode="first", pg_encode="encoded"),
+                ZCodecPayload(class_=43, pg_decode="second", pg_encode=None),
+            ]
+            codec_wrapper = ACodecWrapper(
+                payload=ZCodecPayload(class_=44, pg_decode="nested", pg_encode=None),
+                feeling=Mood.SAD,
+                note=None,
+            )
+
+            inserted = await facade.insert_specimen(
                 conn,
                 doc_jsonb={"k": "v", "n": 1},
                 feeling=Mood.HAPPY,
@@ -275,7 +336,11 @@ def test_roundtrip_type_mappings(full_package: Path, roundtrip_db: str) -> None:
                 related_ids=None,
                 grid=None,
                 moods=[Mood.HAPPY, None, Mood.SAD],
+                codec_payload=codec_payload,
+                codec_payloads=codec_payloads,
+                codec_wrapper=codec_wrapper,
             )
+            assert type(inserted) is facade.InsertSpecimenRow
 
             # enum column decodes to the generated StrEnum (identity, not just ==).
             assert isinstance(inserted.feeling, Mood)
@@ -296,6 +361,20 @@ def test_roundtrip_type_mappings(full_package: Path, roundtrip_db: str) -> None:
             assert inserted.moods is not None
             assert inserted.moods[0] is Mood.HAPPY
             assert inserted.moods[2] is Mood.SAD
+            assert type(inserted.codec_payload) is ZCodecPayload
+            assert inserted.codec_payload == codec_payload
+            assert inserted.codec_payload.class_ == 41
+            assert inserted.codec_payload.pg_decode == "scalar"
+            assert inserted.codec_payload.pg_encode is None
+            assert type(inserted.codec_payloads) is list
+            assert all(type(value) is ZCodecPayload for value in inserted.codec_payloads)
+            assert inserted.codec_payloads == codec_payloads
+            assert type(inserted.codec_wrapper) is ACodecWrapper
+            assert inserted.codec_wrapper is not None
+            assert type(inserted.codec_wrapper.payload) is ZCodecPayload
+            assert inserted.codec_wrapper == codec_wrapper
+            assert inserted.codec_wrapper.feeling is Mood.SAD
+            assert inserted.codec_wrapper.note is None
             # domain-backed columns map to their base Python types.
             assert inserted.label == "specimen"
             assert inserted.rev == 1
@@ -305,67 +384,67 @@ def test_roundtrip_type_mappings(full_package: Path, roundtrip_db: str) -> None:
             specimen_id = inserted.id
 
             # Optional: hit returns the row, miss returns None.
-            hit = await get.get_specimen(conn, id=specimen_id)
+            hit = await facade.get_specimen(conn, id=specimen_id)
             assert hit is not None
             assert hit.id == specimen_id
             assert isinstance(hit.feeling, Mood)
             assert isinstance(hit.origin, Point2D)
             assert hit.maybe_uuid is None
-            miss = await get.get_specimen(conn, id=specimen_id + 10_000)
+            assert type(hit.codec_payload) is ZCodecPayload
+            assert hit.codec_payload == codec_payload
+            assert all(type(value) is ZCodecPayload for value in hit.codec_payloads)
+            assert type(hit.codec_wrapper) is ACodecWrapper
+            assert hit.codec_wrapper is not None
+            assert type(hit.codec_wrapper.payload) is ZCodecPayload
+            assert hit.codec_wrapper.feeling is Mood.SAD
+            assert hit.codec_wrapper.note is None
+            miss = await facade.get_specimen(conn, id=specimen_id + 10_000)
             assert miss is None
 
             # Multiple with enum param + enum/composite column decode.
-            feeling_rows = await by_feeling.list_specimens_by_feeling(conn, feeling=Mood.HAPPY)
+            feeling_rows = await facade.list_specimens_by_feeling(conn, feeling=Mood.HAPPY)
             assert len(feeling_rows) == 1
             assert feeling_rows[0].feeling is Mood.HAPPY
             assert isinstance(feeling_rows[0].origin, Point2D)
-            assert await by_feeling.list_specimens_by_feeling(conn, feeling=Mood.SAD) == []
+            assert await facade.list_specimens_by_feeling(conn, feeling=Mood.SAD) == []
 
-            # Array param via ANY. This exercises the nullable-element branch
-            # (list[T | None] | None). NOTE: the generator's non-null-element
-            # branch (list[T]) is not covered by this fixture because the
-            # single-table specimen schema produces no query shape under which pgn
-            # infers element_not_null:true (= ANY and unnest forms against
-            # specimen all yield false), and test_committed_sig_files_match_fresh_analysis
-            # pins every fixture sig to fresh analysis, so a true flag cannot be
-            # committed here. The branch ships in the real client
-            # (documents_have_unpublished_changes, whose unnest-over-FK-join shape
-            # does infer it) and is guarded by checks:pgn-generate plus call-site
-            # type-checking in apps/backend and apps/ingest, which pass list[UUID].
-            # The generated client bodies are not strict-typechecked themselves.
-            id_rows = await by_ids.list_specimens_by_ids(conn, pub_ids=[inserted.pub_id])
+            # Array param via ANY. This fixture exercises the nullable-element
+            # branch because pgn reports element_not_null:false for its signatures.
+            # Synthetic custom-shape probes exercise elementIsNullable=False, and
+            # the fresh generated package passes basedpyright strict above.
+            id_rows = await facade.list_specimens_by_ids(conn, pub_ids=[inserted.pub_id])
             assert [r.pub_id for r in id_rows] == [inserted.pub_id]
-            assert await by_ids.list_specimens_by_ids(conn, pub_ids=[uuid.uuid4()]) == []
+            assert await facade.list_specimens_by_ids(conn, pub_ids=[uuid.uuid4()]) == []
 
             # Enum array param via ANY + enum array column decoded element-wise.
-            mood_rows = await by_moods.list_specimens_by_moods(conn, moods=[Mood.HAPPY])
+            mood_rows = await facade.list_specimens_by_moods(conn, moods=[Mood.HAPPY])
             assert [r.id for r in mood_rows] == [specimen_id]
             assert mood_rows[0].moods == [Mood.HAPPY, None, Mood.SAD]
             assert mood_rows[0].moods is not None
             assert mood_rows[0].moods[0] is Mood.HAPPY
-            assert await by_moods.list_specimens_by_moods(conn, moods=[Mood.SAD]) == []
+            assert await facade.list_specimens_by_moods(conn, moods=[Mood.SAD]) == []
 
             # Keyword-named param: class_ binds as %(class)s, so it must match by title.
-            class_rows = await by_class.list_specimens_by_class(conn, class_="alpha")
+            class_rows = await facade.list_specimens_by_class(conn, class_="alpha")
             assert [r.id for r in class_rows] == [specimen_id]
-            assert await by_class.list_specimens_by_class(conn, class_="nope") == []
+            assert await facade.list_specimens_by_class(conn, class_="nope") == []
 
             # Keyword-named result column: title AS "class" decodes to .class_.
-            kw_rows = await by_kw_col.list_specimens_keyword_column(conn)
+            kw_rows = await facade.list_specimens_keyword_column(conn)
             assert [r.id for r in kw_rows] == [specimen_id]
             assert kw_rows[0].class_ == "alpha"
 
             # jsonb containment param + the literal-`%` ILIKE branch (title_like=None).
-            search_all = await search.search_specimens(conn, title_like=None, meta_filter={}, label=None)
+            search_all = await facade.search_specimens(conn, title_like=None, meta_filter={}, label=None)
             assert [r.id for r in search_all] == [specimen_id]
-            search_hit = await search.search_specimens(conn, title_like="alp%", meta_filter={}, label="specimen")
+            search_hit = await facade.search_specimens(conn, title_like="alp%", meta_filter={}, label="specimen")
             assert [r.id for r in search_hit] == [specimen_id]
             assert isinstance(search_hit[0].meta, dict)
 
             # RowsAffected helper returns the count.
-            affected = await bump.bump_specimen_revision(conn, id=specimen_id)
+            affected = await facade.bump_specimen_revision(conn, id=specimen_id)
             assert affected == 1
-            bumped = await get.get_specimen(conn, id=specimen_id)
+            bumped = await facade.get_specimen(conn, id=specimen_id)
             assert bumped is not None
             assert bumped.rev == 2
         finally:
@@ -374,57 +453,105 @@ def test_roundtrip_type_mappings(full_package: Path, roundtrip_db: str) -> None:
     asyncio.run(scenario())
 
 
-def test_require_array_rejects_unregistered_enum_array(full_package: Path) -> None:
-    """require_array turns the unregistered enum-array form into a clear error.
+def test_statement_modules_use_psycopg_row_factories(generated_tree: Path) -> None:
+    generated = generated_tree / GENERATED_PACKAGE / "_generated"
+    statements = generated / "statements"
+    paths = sorted(path for path in statements.glob("*.py") if path.name != "__init__.py")
+    assert [path.stem for path in paths] == sorted(QUERY_NAMES)
+    assert not (generated / "sync" / "statements").exists()
 
-    Without register_types psycopg returns an enum array as the raw array text, not
-    a list; the generated enum-array decode wraps the value in require_array so it
-    fails loudly instead of iterating a string into bogus members.
-    """
-    import_module = _import_client(full_package)
-    runtime = import_module("specimen_client._generated._runtime")
+    sql_count = 0
+    for path in paths:
+        source = path.read_text()
+        tree = ast.parse(source)
+        assignments = [
+            node
+            for node in tree.body
+            if isinstance(node, ast.Assign)
+            and any(isinstance(target, ast.Name) and target.id == "SQL" for target in node.targets)
+        ]
+        assert len(assignments) == 1
+        sql_count += len(assignments)
+        assert "_SQL" not in source
+        assert "_decode_row" not in source
+        assert "_cast" not in source
+        assert "_require_array" not in source
 
-    assert runtime.require_array(["happy", "sad"]) == ["happy", "sad"]
-    with pytest.raises(RuntimeError, match="register_types"):
-        _ = runtime.require_array("{happy,sad}")
+        row_name = ROW_NAMES.get(path.stem)
+        row_classes = [node for node in tree.body if isinstance(node, ast.ClassDef) and node.name.endswith("Row")]
+        assert [node.name for node in row_classes] == ([] if row_name is None else [row_name])
+
+        args_row_imports = [
+            alias
+            for node in tree.body
+            if isinstance(node, ast.ImportFrom) and node.module == "psycopg.rows"
+            for alias in node.names
+            if alias.name == "args_row" and alias.asname == "_args_row"
+        ]
+        assert len(args_row_imports) == (0 if row_name is None else 1)
+
+        if row_name is not None:
+            row_factory_calls = [
+                node
+                for node in ast.walk(tree)
+                if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == "_args_row"
+            ]
+            assert len(row_factory_calls) == 2
+            assert all(
+                len(call.args) == 1 and isinstance(call.args[0], ast.Name) and call.args[0].id == row_name
+                for call in row_factory_calls
+            )
+
+        if "_db_types." in source:
+            assert source.count("from .. import types as _db_types") == 1
+            assert "from ..types." not in source
+
+    assert sql_count == 11
+    wrapper_source = (generated / "types" / "a_codec_wrapper.py").read_text()
+    assert "from .z_codec_payload import ZCodecPayload" in wrapper_source
+    assert "from .mood import Mood" in wrapper_source
 
 
-def test_roundtrip_sync_and_cross_surface_identity(full_package: Path, roundtrip_db: str) -> None:
-    """The sync surface decodes through the same shared Row types as async.
+def test_custom_rows_use_qualified_annotations(client_modules) -> None:
+    _, _, import_module = client_modules
+    statement = import_module("specimen_client._generated.statements.insert_specimen")
+    source = Path(statement.__file__).read_text()
 
-    Drives the generated sync functions (psycopg.Connection, no await) end to end,
-    and asserts the Row dataclasses are shared across surfaces: both facades and
-    both statement modules expose the same class object (defined once in
-    _generated._rows), so a value typed against one surface is the other's too.
-    """
+    assert "_decode_row" not in source
+    assert "_cast" not in source
+    assert "from .. import types as _db_types" in source
+    assert "codec_payload: _db_types.ZCodecPayload" in source
+    assert "codec_payloads: list[_db_types.ZCodecPayload | None]" in source
+    assert "_args_row(InsertSpecimenRow)" in source
+    assert ".pg_decode(" not in source
+    assert ".pg_encode(" not in source
+
+
+def test_roundtrip_sync_surface(client_modules, roundtrip_db: str) -> None:
+    """Drive the additive sync public facade end to end."""
     _apply_migrations(roundtrip_db)
-    import_module = _import_client(full_package)
-
-    register = import_module("specimen_client._generated.sync._register")
-    mood_mod = import_module("specimen_client._generated.types.mood")
-    point_mod = import_module("specimen_client._generated.types.point_2_d")
-    insert = import_module("specimen_client._generated.sync.statements.insert_specimen")
-    get = import_module("specimen_client._generated.sync.statements.get_specimen")
-    by_moods = import_module("specimen_client._generated.sync.statements.list_specimens_by_moods")
-    bump = import_module("specimen_client._generated.sync.statements.bump_specimen_revision")
-
-    Mood = mood_mod.Mood
-    Point2D = point_mod.Point2D
-
-    # Cross-surface identity: the async facade, the sync facade, the sync
-    # statement module, and the shared _rows module all expose the same object.
-    async_facade = import_module("specimen_client")
-    sync_facade = import_module("specimen_client.sync")
-    rows_mod = import_module("specimen_client._generated._rows")
-    assert async_facade.InsertSpecimenRow is sync_facade.InsertSpecimenRow
-    assert insert.InsertSpecimenRow is rows_mod.InsertSpecimenRow
-    assert async_facade.InsertSpecimenRow is rows_mod.InsertSpecimenRow
+    _, facade, _ = client_modules
+    Mood = facade.Mood
+    Point2D = facade.Point2D
+    ZCodecPayload = facade.ZCodecPayload
+    ACodecWrapper = facade.ACodecWrapper
 
     conn = psycopg.connect(roundtrip_db, autocommit=True)
     try:
-        register.register_types(conn)
+        facade.register_types(conn)
 
-        inserted = insert.insert_specimen(
+        codec_payload = ZCodecPayload(class_=51, pg_decode="sync", pg_encode=None)
+        codec_payloads = [
+            ZCodecPayload(class_=52, pg_decode="first", pg_encode="encoded"),
+            ZCodecPayload(class_=53, pg_decode="second", pg_encode=None),
+        ]
+        codec_wrapper = ACodecWrapper(
+            payload=ZCodecPayload(class_=54, pg_decode="nested", pg_encode=None),
+            feeling=Mood.SAD,
+            note=None,
+        )
+
+        inserted = facade.insert_specimen(
             conn,
             doc_jsonb={"k": "v", "n": 1},
             feeling=Mood.HAPPY,
@@ -451,7 +578,11 @@ def test_roundtrip_sync_and_cross_surface_identity(full_package: Path, roundtrip
             related_ids=None,
             grid=None,
             moods=[Mood.HAPPY, None, Mood.SAD],
+            codec_payload=codec_payload,
+            codec_payloads=codec_payloads,
+            codec_wrapper=codec_wrapper,
         )
+        assert type(inserted) is facade.InsertSpecimenRow
         assert isinstance(inserted.feeling, Mood)
         assert inserted.feeling is Mood.HAPPY
         assert isinstance(inserted.origin, Point2D)
@@ -459,86 +590,91 @@ def test_roundtrip_sync_and_cross_surface_identity(full_package: Path, roundtrip
         assert inserted.moods == [Mood.HAPPY, None, Mood.SAD]
         assert inserted.moods is not None
         assert inserted.moods[0] is Mood.HAPPY
+        assert type(inserted.codec_payload) is ZCodecPayload
+        assert inserted.codec_payload == codec_payload
+        assert inserted.codec_payload.pg_encode is None
+        assert type(inserted.codec_payloads) is list
+        assert all(type(value) is ZCodecPayload for value in inserted.codec_payloads)
+        assert inserted.codec_payloads == codec_payloads
+        assert type(inserted.codec_wrapper) is ACodecWrapper
+        assert inserted.codec_wrapper is not None
+        assert type(inserted.codec_wrapper.payload) is ZCodecPayload
+        assert inserted.codec_wrapper.feeling is Mood.SAD
+        assert inserted.codec_wrapper.note is None
 
         specimen_id = inserted.id
-        hit = get.get_specimen(conn, id=specimen_id)
+        hit = facade.get_specimen(conn, id=specimen_id)
         assert hit is not None
         assert hit.id == specimen_id
-        assert get.get_specimen(conn, id=specimen_id + 10_000) is None
+        assert type(hit.codec_payload) is ZCodecPayload
+        assert all(type(value) is ZCodecPayload for value in hit.codec_payloads)
+        assert type(hit.codec_wrapper) is ACodecWrapper
+        assert hit.codec_wrapper is not None
+        assert type(hit.codec_wrapper.payload) is ZCodecPayload
+        assert hit.codec_wrapper.feeling is Mood.SAD
+        assert facade.get_specimen(conn, id=specimen_id + 10_000) is None
 
-        mood_rows = by_moods.list_specimens_by_moods(conn, moods=[Mood.HAPPY])
+        mood_rows = facade.list_specimens_by_moods(conn, moods=[Mood.HAPPY])
         assert [r.id for r in mood_rows] == [specimen_id]
-        assert by_moods.list_specimens_by_moods(conn, moods=[Mood.SAD]) == []
+        assert facade.list_specimens_by_moods(conn, moods=[Mood.SAD]) == []
 
-        affected = bump.bump_specimen_revision(conn, id=specimen_id)
+        affected = facade.bump_specimen_revision(conn, id=specimen_id)
         assert affected == 1
-        bumped = get.get_specimen(conn, id=specimen_id)
+        bumped = facade.get_specimen(conn, id=specimen_id)
         assert bumped is not None
         assert bumped.rev == 2
     finally:
         conn.close()
 
 
-def test_roundtrip_single_field_composite(full_package: Path, roundtrip_db: str) -> None:
-    """Regression test for compositeBind on a one-field composite.
+def test_roundtrip_single_field_composite(client_modules, roundtrip_db: str) -> None:
+    """Regression for class-aware adaptation of a one-field composite.
 
-    concatMapSep joins a single-element field list with no separator, so an
-    unguarded tuple expression would render "(x.f)": a parenthesized value, not
-    a tuple, which psycopg would try to adapt as the bare field type instead of
-    the composite. Exercises the param bind (insert) and the result-column
-    decode (RETURNING and a plain SELECT).
+    The registered dataclass sequence callback must return a field-ordered
+    one-element tuple, not the bare field value. Exercises parameter adaptation
+    on insert and result adaptation through RETURNING and a plain SELECT.
     """
     _apply_migrations(roundtrip_db)
-    import_module = _import_client(full_package)
-
-    register = import_module("specimen_client._generated._register")
-    tag_mod = import_module("specimen_client._generated.types.tag_value")
-    insert = import_module("specimen_client._generated.statements.insert_tagged_item")
-    get = import_module("specimen_client._generated.statements.get_tagged_item")
-
-    TagValue = tag_mod.TagValue
+    facade, _, _ = client_modules
+    TagValue = facade.TagValue
 
     async def scenario() -> None:
         conn = await psycopg.AsyncConnection.connect(roundtrip_db, autocommit=True)
         try:
-            await register.register_types(conn)
+            await facade.register_types(conn)
 
-            inserted = await insert.insert_tagged_item(conn, name="widget", tag=TagValue(value="blue"))
+            inserted = await facade.insert_tagged_item(conn, name="widget", tag=TagValue(value="blue"))
+            assert type(inserted) is facade.InsertTaggedItemRow
             assert isinstance(inserted.tag, TagValue)
             assert inserted.tag == TagValue(value="blue")
 
-            hit = await get.get_tagged_item(conn, id=inserted.id)
+            hit = await facade.get_tagged_item(conn, id=inserted.id)
             assert hit is not None
             assert isinstance(hit.tag, TagValue)
             assert hit.tag == TagValue(value="blue")
-            assert await get.get_tagged_item(conn, id=inserted.id + 10_000) is None
+            assert await facade.get_tagged_item(conn, id=inserted.id + 10_000) is None
         finally:
             await conn.close()
 
     asyncio.run(scenario())
 
 
-def test_roundtrip_single_field_composite_sync(full_package: Path, roundtrip_db: str) -> None:
-    """Sync-surface counterpart of test_roundtrip_single_field_composite."""
+def test_roundtrip_single_field_composite_sync(client_modules, roundtrip_db: str) -> None:
+    """Sync public-facade counterpart of the one-field composite regression."""
     _apply_migrations(roundtrip_db)
-    import_module = _import_client(full_package)
-
-    register = import_module("specimen_client._generated.sync._register")
-    tag_mod = import_module("specimen_client._generated.types.tag_value")
-    insert = import_module("specimen_client._generated.sync.statements.insert_tagged_item")
-    get = import_module("specimen_client._generated.sync.statements.get_tagged_item")
-
-    TagValue = tag_mod.TagValue
+    _, facade, _ = client_modules
+    TagValue = facade.TagValue
 
     conn = psycopg.connect(roundtrip_db, autocommit=True)
     try:
-        register.register_types(conn)
+        facade.register_types(conn)
 
-        inserted = insert.insert_tagged_item(conn, name="widget", tag=TagValue(value="blue"))
+        inserted = facade.insert_tagged_item(conn, name="widget", tag=TagValue(value="blue"))
+        assert type(inserted) is facade.InsertTaggedItemRow
         assert isinstance(inserted.tag, TagValue)
         assert inserted.tag == TagValue(value="blue")
 
-        hit = get.get_tagged_item(conn, id=inserted.id)
+        hit = facade.get_tagged_item(conn, id=inserted.id)
         assert hit is not None
         assert hit.tag == TagValue(value="blue")
     finally:

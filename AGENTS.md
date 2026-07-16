@@ -33,6 +33,12 @@ already says.
 
 ## Dhall
 
-`gen/` pins its remote imports by sha256 (`gen/Deps/*.dhall`). Bump those
+`src/` pins its remote imports by sha256 (`src/Deps/*.dhall`). Bump those
 deliberately, one at a time, and re-run the harness before committing a pin
 change.
+
+Never replace a pin with a local filesystem path (`../gen-contract/...`,
+`../gen-sdk/...`) even temporarily for convenience; it only works on a
+machine with those sibling repos checked out and breaks CI. Always use a
+`https://raw.githubusercontent.com/pgenie-io/<repo>/<tag>/...` import with
+its `sha256`.

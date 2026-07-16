@@ -4,7 +4,7 @@ version: 0.0.0
 postgres: 18
 artifacts:
   python:
-    gen: ../../gen/Gen.dhall
+    gen: ../../src/package.dhall
     config:
       packageName: specimen-client
       emitSync: true
@@ -12,25 +12,24 @@ artifacts:
   # Optional Config knobs (undocumented by pgn itself); see
   # tests/test_config_variants.py for the assertions.
   python-name-only:
-    gen: ../../gen/Gen.dhall
+    gen: ../../src/package.dhall
     config:
       packageName: name-only-client
   python-sync-only:
-    gen: ../../gen/Gen.dhall
+    gen: ../../src/package.dhall
     config:
       emitSync: true
+  python-explicit-false:
+    gen: ../../src/package.dhall
+    config:
+      emitSync: false
   python-empty:
-    gen: ../../gen/Gen.dhall
+    gen: ../../src/package.dhall
     config: {}
   python-bare:
-    gen: ../../gen/Gen.dhall
-  python-unknown-key:
-    gen: ../../gen/Gen.dhall
-    config:
-      packageName: unknown-key-client
-      bogusField: 1
+    gen: ../../src/package.dhall
   python-null:
-    gen: ../../gen/Gen.dhall
+    gen: ../../src/package.dhall
     config:
       packageName: null-client
       emitSync: null
