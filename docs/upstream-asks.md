@@ -1,9 +1,10 @@
 # Upstream resolution status: pgn and gen-sdk
 
 This brief records the current status of three upstream integration points.
-The pgn annotation-metadata and warning-surfacing issues are closed and shipped.
-Only the custom-type identity request remains actionable. Architecture details
-stay in `DESIGN.md`.
+The first two issues are closed and shipped. The qualified custom-type identity
+gap is addressed by gen-contract v5, while the broader normalized-name
+guarantee remains open in pgenie issue 75. Architecture details stay in
+`DESIGN.md`.
 
 ## 1. pgn annotation metadata: resolved
 
@@ -18,13 +19,13 @@ generator-side annotation parsing remains.
 
 Issue [#67](https://github.com/pgenie-io/pgenie/issues/67) is closed. Since pgn
 0.7.2, successful generation surfaces reports from `Compiled.warnings`; this
-repository pins pgn 0.9.1.
+repository pins pgn v0.12.0.
 
 With `onUnsupported: Skip`, the generator retains a report for every dropped
-unit while fixed-point filtering removes unsupported custom types, their
+unit while a single-pass survivor fold removes unsupported custom types, their
 dependents, and affected statements. See `DESIGN.md`, section 8.
 
-## 3. Preserve qualified custom-type identity: actionable
+## 3. Preserve qualified custom-type identity: contract support shipped
 
 Project-wide custom-type lookup classifies every custom reference as an enum,
 composite, or absent. Shipped models are pure declarations with no class
@@ -32,16 +33,19 @@ codecs. The lookup classification instead drives support-shape validation,
 custom imports and dependencies, and dependency-first psycopg adapter
 registration. See `DESIGN.md`, sections 3, 5, and 8.
 
-`Interpreters/Project.dhall` currently implements `buildLookup` by comparing a
-custom reference's snake-case name with each project custom type through
-`Text/equal`. This local lookup is the generator's sole need for that
-pgn-specific builtin, but the unqualified comparison also exposes an upstream
-identity gap.
+This ask has since been addressed by gen-contract v5.0.0 (see below). For
+history: `Interpreters/Project.dhall` formerly implemented `buildLookup` by
+comparing a custom reference's snake-case name with each project custom type
+through `Text/equal`, which was the generator's sole need for that pgn-specific
+builtin; the unqualified comparison also exposed an upstream identity gap. That
+lookup has been removed, references now resolve by `CustomTypeRef.index`.
+Generated Python class and module names still use the unqualified contract
+name, so gen-contract v5 does not itself prevent normalized-name collisions.
 
-With pgn 0.9.1, a project containing `alpha.status` and `beta.status` can arrive
-with only one `customTypes` entry, while both uses are represented by the same
-unqualified `Scalar.Custom Name`. A Python mapping cannot recover the discarded
-schema or safely repair annotations and adapter registration.
+Before gen-contract v5, a project containing `alpha.status` and `beta.status`
+could arrive with only one `customTypes` entry, while both uses were represented
+by the same unqualified `Scalar.Custom Name`. A Python mapping cannot recover a
+discarded schema or safely repair annotations and adapter registration.
 
 The upstream ask has two inseparable parts:
 
@@ -54,6 +58,6 @@ not enough. The qualified reference lets lookup use an equality-free structural
 match and removes the local `Text/equal` dependency described in `DESIGN.md`,
 section 10.
 
-Changing `Scalar.Custom` affects gen-sdk consumers. This repository pins its
-gen-sdk import by sha256, so adopting such a change would require an explicit
-pin update and a full harness run.
+Changing `Scalar.Custom` affects gen-sdk consumers. This repository adopted the
+new shape through explicit sha256 pin updates to gen-contract v5 and gen-sdk v3
+and verified it with the full harness.

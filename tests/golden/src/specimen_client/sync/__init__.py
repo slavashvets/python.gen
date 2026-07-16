@@ -79,9 +79,6 @@ from .._generated.statements.search_specimens import (
 # isort: on
 
 # isort: off
-from .._generated.types.a_codec_wrapper import (
-    ACodecWrapper as ACodecWrapper,
-)
 from .._generated.types.mood import (
     Mood as Mood,
 )
@@ -94,6 +91,9 @@ from .._generated.types.tag_value import (
 from .._generated.types.z_codec_payload import (
     ZCodecPayload as ZCodecPayload,
 )
+from .._generated.types.a_codec_wrapper import (
+    ACodecWrapper as ACodecWrapper,
+)
 # isort: on
 
 __all__ = [
@@ -102,11 +102,11 @@ __all__ = [
 ]
 # Project order is intentional for public re-export groups.
 __all__ += [  # noqa: RUF022, RUF100
-    "ACodecWrapper",
     "Mood",
     "Point2D",
     "TagValue",
     "ZCodecPayload",
+    "ACodecWrapper",
 ]
 __all__ += [  # noqa: RUF022, RUF100
     "GetSpecimenRow",

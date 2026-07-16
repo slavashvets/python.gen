@@ -166,23 +166,21 @@ let primitiveIsJsonb =
 let scalarIsJson =
       \(value : Model.Value) ->
         merge
-          { Primitive = primitiveIsJson, Custom = \(_ : Model.Name) -> False }
+          { Primitive = primitiveIsJson
+          , Custom = \(_ : Model.CustomTypeRef) -> False
+          }
           value.scalar
 
 let scalarIsJsonb =
       \(value : Model.Value) ->
         merge
-          { Primitive = primitiveIsJsonb, Custom = \(_ : Model.Name) -> False }
+          { Primitive = primitiveIsJsonb
+          , Custom = \(_ : Model.CustomTypeRef) -> False
+          }
           value.scalar
 
 let valueIsArray =
-      \(value : Model.Value) ->
-        Prelude.Optional.fold
-          Model.ArraySettings
-          value.arraySettings
-          Bool
-          (\(_ : Model.ArraySettings) -> True)
-          False
+      \(value : Model.Value) -> Prelude.Bool.not (Natural/isZero value.dimensionality)
 
 -- A bare (non-array) jsonb scalar binds via psycopg Jsonb(); a bare json scalar
 -- binds via Json(). json preserves the document verbatim, jsonb normalizes it, so
@@ -253,10 +251,10 @@ let run =
                         }
 
                 in  Prelude.Optional.fold
-                      Model.Name
+                      Model.CustomTypeRef
                       value.scalar.customRef
                       (Lude.Compiled.Type Output)
-                      ( \(name : Model.Name) ->
+                      ( \(ref : Model.CustomTypeRef) ->
                           let dimsAtMostTwo =
                                 Natural/isZero (Natural/subtract 2 value.dims)
 
@@ -289,7 +287,7 @@ let run =
                                           else  Lude.Compiled.report
                                                   Output
                                                   [ input.pgName
-                                                  , name.inSnakeCase
+                                                  , ref.name.inSnakeCase
                                                   ]
                                                   "Array of an enum parameter with dimensionality > 2 is not supported"
                                 , Composite =
@@ -314,15 +312,15 @@ let run =
                                               )
                                       else  Lude.Compiled.report
                                               Output
-                                              [ input.pgName, name.inSnakeCase ]
+                                              [ input.pgName, ref.name.inSnakeCase ]
                                               "Array of a composite type parameter with dimensionality > 1 is not supported"
                                 , Absent =
                                     Lude.Compiled.report
                                       Output
-                                      [ name.inSnakeCase ]
+                                      [ ref.name.inSnakeCase ]
                                       "Custom type not found in project customTypes"
                                 }
-                                (lookup name)
+                                (CustomKind.at lookup ref.index)
                       )
                       ( if    isJsonArrayParam
                         then  Lude.Compiled.report

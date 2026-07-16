@@ -1,13 +1,25 @@
 # Upcoming
 
-- Added fail-loud, namespace-wide validation for generated Python names. Query
-  and custom-type collisions can be resolved with typed, whole-entity mappings;
-  invalid, reserved, duplicate, and unknown mappings are rejected. Defensive
-  local-member audits identify both sources when such names reach the generator;
-  pgn may reject them earlier, and resolution is a SQL or schema rename. The
-  generator never silently overwrites files or assigns numeric suffixes.
-  Per-type module audits also reject a mapped class that would shadow an actual
-  primitive, core, or custom dependency import.
+- Bumped the pins to gen-contract v5.0.0 and gen-sdk v3.0.0 (requires `pgn`
+  v0.12.0). Replaced the hand-rolled `buildLookup` custom-kind resolver and its
+  fixed-point removal cascade with gen-sdk's `CustomTypes` module: references
+  now resolve by the contract's `CustomTypeRef.index` and `onUnsupported: Skip`
+  computes survivorship in a single left-fold over the topologically-sorted
+  `customTypes`. This retires the generator's last `Text/equal` use, so no live
+  `Text/equal` call remains anywhere in `src/`.
+
+- Removed the `queryNameMappings`/`customTypeNameMappings` rename-mapping
+  config and all generation-time Python namespace-collision detection
+  (project-wide facade/module, per-query, per-custom-type, and per-type
+  module-internal audits). `pgn` 0.11.0 dropped the `Text/equal` builtin these
+  relied on to compare two runtime `Text` values, and there is no
+  `Text/replace`-based way to reconstruct that decision. A colliding schema is
+  no longer caught at `pgn generate`. Collisions that remain visible in the
+  generated tree generally fail the package's `basedpyright --strict` gate
+  (`reportRedeclaration` or `reportInvalidTypeForm`), but a module-path
+  collision can overwrite an earlier file before the checker sees it.
+  [pgenie-io/pgenie#75](https://github.com/pgenie-io/pgenie/issues/75) asks pgn
+  to guarantee unique custom-type identities at the source.
 
 - Finalized one additive package surface. Async functions remain at the package
   root for every configuration. `emitSync: true` adds `<package>.sync`, a sync
@@ -29,22 +41,22 @@
   ranks, composite ranks, custom-array fields inside composites, and missing or
   unsupported custom types fail loudly.
 
-- Retained `buildLookup` as the project-wide custom-kind resolver for identities
-  preserved in the contract. Its `Text/equal` use is an explicit pgn-fork
-  constraint. The planned exit must preserve every schema-qualified custom type
-  entry and expose a stable qualified identifier on `Scalar.Custom`; kind alone
-  is insufficient. pgn 0.9.1 can collapse same-unqualified-name types across
-  schemas, so that database shape remains unsupported and cannot be repaired by
-  a Python mapping. Natural project indexes now provide deterministic
-  custom-import deduplication and ordering.
-  Query, parameter, field, and private statement names are collision-safe while
-  SQL names remain unchanged.
+- Resolved custom-type references by their contract-supplied
+  `CustomTypeRef.index` (gen-contract v5) rather than by name comparison, so a
+  reference carries a stable schema-qualified identity (`pgSchema`/`pgName`)
+  directly. Same-unqualified-name types across schemas no longer collapse
+  during reference resolution. Generated class and module names still come
+  from the unqualified contract name, so their Python names must remain unique.
+  Natural project indexes provide deterministic custom-import deduplication and
+  ordering. Reserved helper and keyword conflicts are escaped while SQL names
+  remain unchanged.
 
 - Kept `onUnsupported: Fail | Skip`. `Fail` aborts generation with the nested
-  report. `Skip` preserves warnings and computes a bounded fixed point that
-  removes an unsupported custom type, its dependent custom types and statements,
-  and all affected type, registration, facade, Row, and statement entries. The
-  surviving package remains strict-importable.
+  report. `Skip` preserves warnings and computes survivorship in a single
+  left-fold over the topologically-sorted `customTypes`, removing an unsupported
+  custom type, its dependent custom types and statements, and all affected type,
+  registration, facade, Row, and statement entries. The surviving package
+  remains strict-importable.
 
 - Established the generated tree as a greenfield layout with no compatibility
   layer or promise for internal generated paths. Every generated Python file now
@@ -61,8 +73,8 @@
   class-aware adapters, pure models, canonical `args_row` Rows, and no query
   decoders, model codecs, casts, or bytes SQL. H2 CONFIRM: 25 Python files /
   1467 lines / 11 statement files / 801 statement lines / 11 SQL. H3 CONFIRM:
-  Ruff 0/0, authored long0, SQL long0, raw output/no postformat. Tests: 73
-  passed, 0 skipped; pgn 0.9.1; strict basedpyright 0/0.
+  Ruff 0/0, authored long0, SQL long0, raw output/no postformat. Tests: 50
+  passed, 0 skipped; pgn v0.12.0; strict basedpyright 0/0.
 
 - Migrated the generator to gen-contract v4.0.1 and gen-sdk v2.0.0 using
   `Sdk.Sigs`. The implementation moved from `gen/` into `src/`, the working-tree
@@ -79,9 +91,10 @@
   tuples with `dataclasses.fields` and `getattr`, preserving one-field arity.
   The fixture exercises the type as both a parameter and a result.
 
-- Kept `PyIdent.dhall` independent of fork-only text equality by using its
-  bounded `Text/replace` marker construction. Keyword fields and parameters gain
-  a trailing underscore only in Python, while raw database names remain stable.
+- Kept `PyIdent.dhall` independent of fork-only text equality by using
+  `Lude.Text.replaceIfOneOf`'s bounded, sentinel-wrapped `Text/replace`
+  construction. Keyword fields and parameters gain a trailing underscore only
+  in Python, while raw database names remain stable.
 
 - Preserved the release and license flow. The release job resolves
   `src/package.dhall` into the `resolved.dhall` release asset, then byte-checks

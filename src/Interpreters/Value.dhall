@@ -29,19 +29,21 @@ let run =
           Scalar.Output
           Output
           ( \(scalar : Scalar.Output) ->
-              Prelude.Optional.fold
-                Model.ArraySettings
-                input.arraySettings
-                Output
-                ( \(arraySettings : Model.ArraySettings) ->
-                    let elementType =
-                          if    arraySettings.elementIsNullable
+              if    Natural/isZero input.dimensionality
+              then  { pyType = scalar.pyType
+                    , imports = scalar.imports
+                    , scalar
+                    , dims = 0
+                    , elementIsNullable = False
+                    }
+              else  let elementType =
+                          if    input.elementIsNullable
                           then  "${scalar.pyType} | None"
                           else  scalar.pyType
 
                     let arrayType =
                           Natural/fold
-                            arraySettings.dimensionality
+                            input.dimensionality
                             Text
                             (\(inner : Text) -> "list[${inner}]")
                             elementType
@@ -49,16 +51,9 @@ let run =
                     in  { pyType = arrayType
                         , imports = scalar.imports
                         , scalar
-                        , dims = arraySettings.dimensionality
-                        , elementIsNullable = arraySettings.elementIsNullable
+                        , dims = input.dimensionality
+                        , elementIsNullable = input.elementIsNullable
                         }
-                )
-                { pyType = scalar.pyType
-                , imports = scalar.imports
-                , scalar
-                , dims = 0
-                , elementIsNullable = False
-                }
           )
           (Scalar.run {=} input.scalar)
 
@@ -68,12 +63,12 @@ let qualifyCustom
       \(className : Text) ->
       \(value : Output) ->
         Prelude.Optional.fold
-          Model.Name
+          Model.CustomTypeRef
           value.scalar.customRef
           Text
-          ( \(name : Model.Name) ->
+          ( \(ref : Model.CustomTypeRef) ->
               Text/replace
-                name.inPascalCase
+                ref.name.inPascalCase
                 (prefix ++ className)
                 value.pyType
           )

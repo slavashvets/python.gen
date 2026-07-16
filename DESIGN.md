@@ -157,7 +157,7 @@ directly. Statement SQL is passed as `LiteralString`. No runtime accepts encoded
 SQL bytes. The generated package has no separately installed support library;
 its only non-stdlib consumer dependency is `psycopg>=3.3.4,<4`.
 
-## 5. Configuration, mapping, and unsupported shapes
+## 5. Configuration and unsupported shapes
 
 The public Dhall config is:
 
@@ -165,14 +165,6 @@ The public Dhall config is:
 { packageName : Optional Text
 , emitSync : Optional Bool
 , onUnsupported : Optional < Fail | Skip >
-, queryNameMappings : Optional
-    (List { source : Text, target : { snakeCase : Text, pascalCase : Text } })
-, customTypeNameMappings : Optional
-    ( List
-        { source : { schema : Text, name : Text }
-        , target : { snakeCase : Text, pascalCase : Text }
-        }
-    )
 }
 ```
 
@@ -182,35 +174,27 @@ The public Dhall config is:
 - `packageName`: project name in kebab case;
 - `emitSync`: `False`;
 - `onUnsupported`: `Fail`.
-- `queryNameMappings`: `[]`;
-- `customTypeNameMappings`: `[]`.
 
 An omitted config block, an omitted field, and a `null` field therefore use the
 same fallback. Async output is present for every value of `emitSync`; only true
 adds sync output.
 
-Source-derived identifiers first receive lexical and reserved-name escaping.
-Typed mappings replace a complete query or custom-type Python identity and must
-already contain exact valid targets. After resolution, project and local
-namespace audits reject duplicate modules, functions, Row classes, custom
-types, facade exports, parameters, fields, and enum members before rendering.
-Each custom-type module also audits its class against the primitive, core, and
-custom dependency symbols it actually imports.
-Fixed core exports remain occupied. The generator never silently overwrites a
-file or assigns an order-dependent numeric suffix; see
-[ADR 0001](docs/adr/0001-generated-python-name-collisions.md).
-
-Custom-type mapping is exact only for entities preserved in the input contract.
-pgn 0.9.1 can collapse same-unqualified-name types across schemas and expose an
-unqualified `Scalar.Custom` reference. The generator cannot reconstruct the
-discarded schema identity from SQL and rejects duplicate unqualified contract
-names if they do reach it. Until upstream preserves all schema-qualified types
-and a stable qualified reference, such database shapes are unsupported.
-
-Local member audits are defensive for inputs that reach the generator. pgn may
-reject a conflicting SQL or schema spelling during analysis first. Local
-conflicts are resolved by renaming that SQL or schema source; whole-entity query
-and custom-type mappings do not apply to members.
+Source-derived identifiers receive lexical and reserved-name escaping only
+(`Structures/PyIdent.dhall`); there is no rename-mapping config and no
+generation-time namespace-collision detection. `pgn`'s embedded Dhall evaluator
+dropped `Text/equal` (pgn 0.11.0), which removed the only mechanism that could
+compare two runtime `Text` values to decide a collision or resolve a mapping's
+`source` against a query/type name; that decision is not reconstructible from
+`Text/replace` alone (see section 10). Instead, the generated package is held
+to `basedpyright --strict` returning zero errors and zero warnings. A duplicate
+dataclass field name or a name that shadows a needed type surfaces there
+(`reportRedeclaration`/`reportInvalidTypeForm`) rather than at `pgn generate`
+time, and less precisely attributed (generated Python, not the originating
+SQL/schema). A module-path collision can overwrite an earlier generated file
+before the type checker runs, so input schemas must still guarantee unique
+generated Python names.
+[pgenie-io/pgenie#75](https://github.com/pgenie-io/pgenie/issues/75) asks pgn
+to guarantee unique custom-type identities at the source.
 
 `Interpreters/Primitive.dhall` maps pgn union constructors, not signature-file
 strings. Supported scalars are Boolean, integer and OID, floating point,
@@ -275,25 +259,31 @@ postprocessor rewrites generated files.
 ```text
 optional config
   -> resolved config
-  -> buildLookup(custom types)
-  -> fixed-point custom-type filtering in Skip mode
-  -> compile custom types and query checks
+  -> index-aligned kind classification (kindOf) of every custom type
+  -> one-pass survivor cascade (Sdk.CustomTypes.supportedCustomTypesReasoned)
+     masking unsupported indices to Absent in Skip mode
+  -> compile custom types and query checks against the masked lookup
   -> dependency-first registration order
   -> render facades, core, runtimes, types, registration, and statements
   -> prepend the generated header
 ```
 
 `onUnsupported: Fail` traverses the original project and propagates the first
-compiled failure, so generation aborts without a partial client.
+compiled failure, so generation aborts without a partial client. In this mode
+nothing is masked: the lookup is the full, unmasked kind classification.
 
-`onUnsupported: Skip` repeatedly rebuilds `buildLookup` from the surviving
-custom types and removes any type that no longer compiles. It then compiles
-queries against the final lookup. A removed type therefore also removes its
-dependent composites and statements. Facade exports, type initializers,
-registration entries, statement files, and Row exports are assembled only from
-survivors. Reports for dropped units are preserved as warnings. The bounded
-fixed point can only remove candidates, so it terminates after at most the
-original custom-type count.
+`onUnsupported: Skip` computes survivorship in a single left-fold via
+`Sdk.CustomTypes.supportedCustomTypesReasoned`. Because `Project.customTypes`
+is topologically sorted (every referenced index precedes the referencing type),
+one pass suffices: the fold marks a type unsupported if its own definition
+cannot compile (`ownDefinitionSupported`) or if any custom type it references
+was already marked unsupported. Unsupported indices are then masked to `Absent`
+in the kind lookup, so a reference to a removed type reads exactly like a
+missing type. Queries compile against that same masked lookup, so a removed type
+also removes its dependent composites and statements. Facade exports, type
+initializers, registration entries, statement files, and Row exports are
+assembled only from survivors, and reports for dropped units are preserved as
+warnings.
 
 Query compilation is deliberately consolidated in `QueryCheck`: keep/drop state
 and warning data come from one literal `QueryGen.run` call site before the final
@@ -344,27 +334,52 @@ element nullability. `Member` and `ParamsMember` apply member nullability,
 identifier safety, lookup classification, imports, and parameter wrapping.
 `ResultColumns` builds Row field declarations in analyzed order. `Query`
 combines SQL, Row, parameters, and surfaces. `Project` owns lookup scope,
-fixed-point filtering, registration order, file selection, and facades.
+single-pass survivor filtering, registration order, file selection, and
+facades.
 
 ## 10. The pinned `Text/equal` constraint
 
-`buildLookup` intentionally remains in `Interpreters/Project.dhall`. It compares
-a custom reference's snake-case name with the project custom type name using
-`Text/equal`. That builtin belongs to pgn's embedded Dhall fork and is not
-available in upstream standard Dhall.
+`pgn` 0.11.0 removed `Text/equal` (along with `Text/length` and `Bool/equal`)
+from its embedded Dhall evaluator, to stay in line with the official Dhall
+spec. There is no way to reconstruct a `Bool` or a differently-typed decision
+from comparing two arbitrary runtime `Text` values using only `Text/replace`;
+`Text/replace`-based tricks (this repository's own former keyword-marker
+trick, and gen-sdk's `Lude.Text.replaceIfEqual`/`replaceIfOneOf`) only ever
+transform text, they cannot branch into a different type. Every piece of this
+generator that made a decision this way is gone: the `queryNameMappings`/
+`customTypeNameMappings` rename-mapping config
+(`Structures/PythonNameMapping.dhall`, matched a mapping's `source` against a
+runtime name), `validateCustomTypeIdentities` (rejected two custom types
+collapsing to the same unqualified contract `Name`), and
+`Structures/PythonNamespace.dhall`'s `validate` (4 call sites in
+`Interpreters/Project.dhall`: per-query and per-custom-type local audits, the
+project-wide facade/module audit, and per-type module-internal bindings).
+[pgenie-io/pgenie#75](https://github.com/pgenie-io/pgenie/issues/75) asks pgn
+to guarantee unique custom-type identities at the source instead. The
+generated package's `basedpyright --strict` gate (see section 12) catches
+collisions that remain visible in the output tree. It cannot detect an earlier
+file that was overwritten at the same generated module path.
 
-The dependency is pinned and explicit. The complete fixture needs fork-aware
-evaluation solely because it invokes this generator and the local `buildLookup`
-uses `Text/equal`. The upstream exit must preserve every schema-qualified
-`customTypes` entry and put a stable qualified identifier, or a project index
-with equivalent identity, on each custom scalar reference. Besides removing
-text equality, that prevents pgn 0.9.1 from collapsing same-unqualified-name
-types across schemas. Until then, pgn and CI's pinned fork-aware action are the
-supported evaluators, and cross-schema duplicate type names are unsupported.
+`buildLookup`, the last `Text/equal` user, compared a reference's snake-case
+name against each project custom type's name and has been removed.
+gen-contract v5's `CustomTypeRef` carries an `index` into `Project.customTypes`,
+and gen-sdk v3's `CustomTypes` module folds over that topologically-sorted list
+to compute survivorship without any text comparison. References now resolve by
+index (`Structures/CustomKind.dhall`'s `at`), so a repo-wide `grep -rn
+"Text/equal" src/` finds only these explanatory comments. No live use remains.
 
-`PyIdent.dhall` uses its separate `Text/replace` marker construction for keyword
-membership. `ImportSet.dhall` uses natural project indexes for equality,
-deduplication, and ordering. Neither substitutes for the project lookup.
+The generator no longer needs fork-only text equality anywhere. It does still
+rely on gen-contract v5's contract guarantees: every `CustomTypeRef.index` must
+address the intended `customTypes` entry, and `customTypes` must be
+topologically sorted (every referenced index precedes the referencing type),
+which is what makes the single-pass survivor cascade sound. `pgn` remains the
+supported evaluator and generation driver; upholding those index/ordering
+invariants is the producer's responsibility.
+
+`PyIdent.dhall` uses `Lude.Text.replaceIfOneOf`'s bounded `Text/replace`
+construction for keyword membership. `ImportSet.dhall` uses natural project
+indexes for equality, deduplication, and ordering. Neither substitutes for the
+project lookup.
 
 ## 11. Taking ownership
 
@@ -394,7 +409,7 @@ PostgreSQL with these verdicts:
 - H2 CONFIRM: 25 Python files / 1467 lines / 11 statement files / 801 statement
   lines / 11 SQL.
 - H3 CONFIRM: Ruff 0/0, authored long0, SQL long0, raw output/no postformat.
-- Tests: 73 passed, 0 skipped; pgn 0.9.1; strict basedpyright 0/0.
+- Tests: 50 passed, 0 skipped; pgn v0.12.0; strict basedpyright 0/0.
 
 The H1 round trip covers both connection surfaces and exact cross-facade
 identities. It covers scalar enum, enum arrays including rank 2, scalar

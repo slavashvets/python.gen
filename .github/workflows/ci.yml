@@ -51,12 +51,9 @@ jobs:
         with:
           ref: ${{ inputs.ref || github.sha }}
 
-      # A single-artifact pgn generate peaks at ~6.5 GB RSS on this runner
-      # (memory goes to normalizing the generator closure, near-independent
-      # of the query count), which flirts with the 7.8 GiB RAM + 3 GiB stock
-      # swap and got the VM killed by the memory watchdog mid-suite; extra
-      # swap lets the GC spill instead. /swapfile is taken by the image's
-      # stock swap, so the extra file goes on the /mnt ephemeral disk.
+      # pgn generation has exceeded the hosted runner's stock memory on this
+      # suite. Keep extra swap as evaluator and GC headroom. /swapfile is taken
+      # by the image's stock swap, so the extra file goes on /mnt.
       - name: Add swap headroom for pgn generate
         shell: bash
         run: |
@@ -77,8 +74,8 @@ jobs:
           set -euo pipefail
 
           version="$(mise x -- pgn --version)"
-          if [[ "$version" != "0.9.1" ]]; then
-            echo "::error::Expected pgn 0.9.1 (mise.toml pin), got '$version'."
+          if [[ "$version" != "0.12.0" ]]; then
+            echo "::error::Expected pgn 0.12.0 (mise.toml pin), got '$version'."
             exit 1
           fi
 
@@ -124,9 +121,8 @@ jobs:
         with:
           ref: ${{ inputs.ref || github.sha }}
 
-      # A plain, standard-Dhall evaluator cannot run this because the local
-      # Project.buildLookup uses Text/equal, a builtin from pgn's forked Dhall.
-      # The pinned action bundles that same fork.
+      # Use the pinned directory-tree action for the same reproducible contract
+      # evaluation path used by release validation.
       - name: Generate output from Dhall
         uses: nikita-volkov/dhall-directory-tree.github-action@60a18dc647d6daea805263ea0fed7bb8011f3bcd # v2
         with:

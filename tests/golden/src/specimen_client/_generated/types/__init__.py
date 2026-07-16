@@ -3,9 +3,9 @@
 # SPDX-License-Identifier: MIT-0
 
 # isort: off
-from .a_codec_wrapper import ACodecWrapper as ACodecWrapper
 from .mood import Mood as Mood
 from .point_2_d import Point2D as Point2D
 from .tag_value import TagValue as TagValue
 from .z_codec_payload import ZCodecPayload as ZCodecPayload
+from .a_codec_wrapper import ACodecWrapper as ACodecWrapper
 # isort: on

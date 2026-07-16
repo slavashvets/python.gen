@@ -19,7 +19,7 @@ let ScalarDecode = < Passthrough | Custom >
 let Output =
       { pyType : Text
       , imports : ImportSet.Type
-      , customRef : Optional Model.Name
+      , customRef : Optional Model.CustomTypeRef
       , decode : ScalarDecode
       }
 
@@ -35,18 +35,18 @@ let run =
                   ( \(p : Primitive.Output) ->
                       { pyType = p.pyType
                       , imports = p.imports
-                      , customRef = None Model.Name
+                      , customRef = None Model.CustomTypeRef
                       , decode = ScalarDecode.Passthrough
                       }
                   )
                   (Primitive.run {=} primitive)
           , Custom =
-              \(name : Model.Name) ->
+              \(ref : Model.CustomTypeRef) ->
                 Lude.Compiled.ok
                   Output
-                  { pyType = name.inPascalCase
+                  { pyType = ref.name.inPascalCase
                   , imports = ImportSet.empty
-                  , customRef = Some name
+                  , customRef = Some ref
                   , decode = ScalarDecode.Custom
                   }
           }

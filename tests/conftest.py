@@ -43,7 +43,7 @@ def pgn_bin() -> str:
     out = subprocess.run(["mise", "which", "pgn"], cwd=HERE, capture_output=True, text=True)
     path = out.stdout.strip()
     if out.returncode != 0 or not path:
-        pytest.fail("pgn 0.9.1 is required but is not resolvable via PATH or mise")
+        pytest.fail("pgn 0.12.0 is required but is not resolvable via PATH or mise")
     return path
 
 

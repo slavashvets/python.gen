@@ -12,8 +12,6 @@ let PyIdent = ../Structures/PyIdent.dhall
 
 let Surface = ../Structures/Surface.dhall
 
-let PythonNameMapping = ../Structures/PythonNameMapping.dhall
-
 let ResultModule = ./Result.dhall
 
 let QueryFragmentsModule = ./QueryFragments.dhall
@@ -22,10 +20,7 @@ let ParamsMember = ./ParamsMember.dhall
 
 let StatementModule = ../Templates/StatementModule.dhall
 
-let Config =
-      { emitSync : Bool
-      , queryNameMappings : List PythonNameMapping.Query
-      }
+let Config = { emitSync : Bool }
 
 let Compiled = Lude.Compiled
 
@@ -129,12 +124,9 @@ let run =
       \(lookup : CustomKind.Lookup) ->
       \(input : Input) ->
         let pythonName =
-              PythonNameMapping.resolveQuery
-                config.queryNameMappings
-                input.name.inSnakeCase
-                { snakeCase = PyIdent.querySafeName input.name.inSnakeCase
-                , pascalCase = input.name.inPascalCase
-                }
+              { snakeCase = PyIdent.querySafeName input.name.inSnakeCase
+              , pascalCase = input.name.inPascalCase
+              }
 
         let rowClassName = pythonName.pascalCase ++ "Row"
 

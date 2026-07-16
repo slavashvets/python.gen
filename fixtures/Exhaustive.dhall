@@ -9,16 +9,12 @@
 -- those statements/types are dropped with a warning instead of aborting the
 -- whole compile.
 --
--- CI evaluates this fixture with the pinned fork-aware directory-tree action.
--- Standard `dhall to-directory-tree` cannot evaluate the pgn fork's Text/equal
--- builtin used by the generator.
+-- CI evaluates this fixture with its pinned directory-tree action.
 let Sdk = ../src/Deps/Sdk.dhall
 
 let Gen = ../src/package.dhall
 
 let OnUnsupported = ../src/Structures/OnUnsupported.dhall
-
-let PythonNameMapping = ../src/Structures/PythonNameMapping.dhall
 
 let project = Sdk.Fixtures.Exhaustive
 
@@ -27,8 +23,6 @@ let config =
         { packageName = None Text
         , emitSync = Some False
         , onUnsupported = Some OnUnsupported.Mode.Skip
-        , queryNameMappings = None (List PythonNameMapping.Query)
-        , customTypeNameMappings = None (List PythonNameMapping.CustomType)
         }
 
 in  Sdk.Output.toFileMap (Gen.compile config project)
