@@ -15,7 +15,7 @@ Point an artifact at the working-tree entry point and choose a package name:
 ```yaml
 artifacts:
   python:
-    gen: https://raw.githubusercontent.com/slavashvets/python.gen/master/src/package.dhall
+    gen: https://raw.githubusercontent.com/slavashvets/python.gen/main/src/package.dhall
     config:
       packageName: my-db-client
       emitSync: true
@@ -28,7 +28,7 @@ database:
 pgn --database-url "$DATABASE_URL" generate
 ```
 
-The raw `master` URL is valid but moving. For reproducible use, pin an actual
+The raw `main` URL is valid but moving. For reproducible use, pin an actual
 published `resolved.dhall` release asset or vendor the artifact delivered by
 the release wheel. Do not guess a release tag that has not been published.
 A relative path such as `../python.gen/src/package.dhall` is appropriate while
