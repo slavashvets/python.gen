@@ -203,7 +203,7 @@ jobs:
           cmp release-asset/resolved.dhall wheel/src/pgenie_python_gen/resolved.dhall
 
       - name: Install mise-managed tools
-        uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
+        uses: jdx/mise-action@9e7f7633ff6f6d6048a9418a68d48f288f50eb14 # v4.2.3
 
       - name: Build sdist and wheel
         run: mise x -- uv build --sdist --wheel --out-dir wheel/dist wheel
