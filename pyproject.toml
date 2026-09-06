@@ -9,7 +9,7 @@ dev = [
     "pytest>=8",
     "psycopg[binary]>=3.3.4,<4",
     "basedpyright==1.39.9",
-    "ruff==0.15.20",
+    "ruff==0.16.5",
 ]
 
 [tool.ruff]
