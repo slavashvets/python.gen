@@ -7,7 +7,7 @@ dependencies = []
 [dependency-groups]
 dev = [
     "pytest>=8",
-    "psycopg[binary]>=3.3.4,<4",
+    "psycopg[binary]>=3.3.5,<4",
     "basedpyright==1.39.9",
     "ruff==0.15.20",
 ]
